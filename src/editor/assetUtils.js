@@ -1,7 +1,10 @@
 import * as THREE from 'three';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 export function makePlaceableClone(source, asset) {
-  const model = source.clone(true);
+  source.updateMatrixWorld(true);
+  new THREE.Box3().setFromObject(source);
+  const model = cloneSkeleton(source);
   model.traverse((child) => {
     child.castShadow = true;
     child.receiveShadow = true;

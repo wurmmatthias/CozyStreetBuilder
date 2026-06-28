@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { degreesFromRadians, makePlaceableClone, setGhostMaterial, setSelectedTint, snapToGrid } from './assetUtils.js';
+import { PedestrianController } from './PedestrianController.js';
 import { TrafficController } from './TrafficController.js';
 
 const TOWN_CELL_SIZE = 2;
@@ -27,6 +28,7 @@ export class PlacementController {
     this.mode = 'build';
     this.lastSnap = new THREE.Vector3();
     this.traffic = new TrafficController(this.sceneManager);
+    this.pedestrians = new PedestrianController(this.sceneManager);
 
     const canvas = this.sceneManager.renderer.domElement;
     canvas.addEventListener('pointermove', (event) => this.onPointerMove(event));
@@ -42,6 +44,7 @@ export class PlacementController {
     const loadedPacks = await Promise.all(packs.map((pack) => this.loadPack(pack)));
     this.assets = loadedPacks.flat();
     this.traffic.setAssets(this.assets);
+    this.pedestrians.setAssets(this.assets);
     this.syncTrafficRoads();
     this.renderAssetButtons();
 
@@ -97,6 +100,8 @@ export class PlacementController {
         rotationStep: pack.rotationStep ?? 90,
         showInPalette: pack.showInPalette ?? true,
         trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
+        personForwardAxis: pack.personForwardAxis ?? 'z',
+        animations: gltf.animations,
       };
     });
   }
@@ -140,6 +145,10 @@ export class PlacementController {
   setGridSize(size) {
     this.gridSize = size;
     this.sceneManager.setGridSize(size);
+  }
+
+  setTrafficDensity(density) {
+    this.traffic.setDensity(density);
   }
 
   onPointerMove(event) {
@@ -264,6 +273,7 @@ export class PlacementController {
     this.placed.forEach((object) => this.sceneManager.remove(object));
     this.placed = [];
     this.traffic.reset();
+    this.pedestrians.reset();
     this.syncTrafficRoads();
 
     if (this.elements.generateStatus) {
@@ -408,6 +418,7 @@ export class PlacementController {
 
   syncTrafficRoads() {
     this.traffic.syncRoads(this.placed);
+    this.pedestrians.syncRoads(this.placed);
   }
 }
 
@@ -591,18 +602,21 @@ function rotationFacingRoad(roadDirections) {
 function pickBuildingAsset(buildings) {
   const sorted = [...buildings].sort((a, b) => searchableName(a).localeCompare(searchableName(b)));
   const roll = Math.random();
-  const skyscraper = sorted.find((asset) => searchableName(asset).includes('skyscraper'));
-  const store = sorted.find((asset) => searchableName(asset).includes('store'));
+  const skyscrapers = sorted.filter((asset) => searchableName(asset).includes('skyscraper'));
+  const storefronts = sorted.filter((asset) => {
+    const name = searchableName(asset);
+    return name.includes('store') || name.includes('pizza');
+  });
 
-  if (skyscraper && roll > 0.9) {
-    return skyscraper;
+  if (skyscrapers.length > 0 && roll > 0.9) {
+    return randomItem(skyscrapers);
   }
 
-  if (store && roll < 0.18) {
-    return store;
+  if (storefronts.length > 0 && roll < 0.24) {
+    return randomItem(storefronts);
   }
 
-  return randomItem(sorted.filter((asset) => asset !== skyscraper)) ?? randomItem(sorted);
+  return randomItem(sorted.filter((asset) => !skyscrapers.includes(asset))) ?? randomItem(sorted);
 }
 
 function addRoad(roads, x, z) {

@@ -32,6 +32,15 @@ app.innerHTML = `
         </div>
       </section>
 
+      <section class="panel-section">
+        <h2>Traffic</h2>
+        <div class="control-row">
+          <label for="traffic-density">Density</label>
+          <input id="traffic-density" type="range" min="0" max="100" value="50" step="5" />
+          <output id="traffic-density-value">50%</output>
+        </div>
+      </section>
+
       <section class="panel-section build-only">
         <div class="section-heading">
           <h2>Assets</h2>
@@ -113,7 +122,7 @@ const controller = new PlacementController(scene, {
   modeLabel: document.querySelector('#mode-label'),
 });
 
-if (import.meta.env.DEV) {
+if (import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
   window.cozyStreetBuilder = { scene, controller };
 }
 
@@ -122,6 +131,8 @@ const generateMode = document.querySelector('#generate-mode');
 const viewMode = document.querySelector('#view-mode');
 const gridSize = document.querySelector('#grid-size');
 const gridSizeValue = document.querySelector('#grid-size-value');
+const trafficDensity = document.querySelector('#traffic-density');
+const trafficDensityValue = document.querySelector('#traffic-density-value');
 
 function setMode(mode) {
   shell.dataset.mode = mode;
@@ -139,6 +150,12 @@ gridSize.addEventListener('input', () => {
   const value = Number(gridSize.value);
   gridSizeValue.value = `${value}m`;
   controller.setGridSize(value);
+});
+
+trafficDensity.addEventListener('input', () => {
+  const value = Number(trafficDensity.value);
+  trafficDensityValue.value = `${value}%`;
+  controller.setTrafficDensity(value / 100);
 });
 
 document.querySelector('#rotate-left').addEventListener('click', () => controller.rotateSelected(-1));

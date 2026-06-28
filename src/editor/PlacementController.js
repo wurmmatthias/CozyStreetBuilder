@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { degreesFromRadians, makePlaceableClone, setGhostMaterial, setSelectedTint, snapToGrid } from './assetUtils.js';
+import { TrafficController } from './TrafficController.js';
 
 const TOWN_CELL_SIZE = 2;
 const DIRECTIONS = [
@@ -25,6 +26,7 @@ export class PlacementController {
     this.selected = null;
     this.mode = 'build';
     this.lastSnap = new THREE.Vector3();
+    this.traffic = new TrafficController(this.sceneManager);
 
     const canvas = this.sceneManager.renderer.domElement;
     canvas.addEventListener('pointermove', (event) => this.onPointerMove(event));
@@ -39,10 +41,14 @@ export class PlacementController {
 
     const loadedPacks = await Promise.all(packs.map((pack) => this.loadPack(pack)));
     this.assets = loadedPacks.flat();
+    this.traffic.setAssets(this.assets);
+    this.syncTrafficRoads();
     this.renderAssetButtons();
 
-    if (this.assets[0]) {
-      this.chooseAsset(this.assets[0].id);
+    const firstPaletteAsset = this.assets.find((asset) => asset.showInPalette !== false);
+
+    if (firstPaletteAsset) {
+      this.chooseAsset(firstPaletteAsset.id);
     }
   }
 
@@ -89,6 +95,8 @@ export class PlacementController {
         source,
         scale: pack.scale ?? 1,
         rotationStep: pack.rotationStep ?? 90,
+        showInPalette: pack.showInPalette ?? true,
+        trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
       };
     });
   }
@@ -96,7 +104,7 @@ export class PlacementController {
   renderAssetButtons() {
     this.elements.assetGrid.innerHTML = '';
 
-    this.assets.forEach((asset) => {
+    this.assets.filter((asset) => asset.showInPalette !== false).forEach((asset) => {
       const button = document.createElement('button');
       button.className = 'asset-button';
       button.type = 'button';
@@ -208,6 +216,7 @@ export class PlacementController {
     object.userData.assetName = this.activeAsset.name;
     this.placed.push(object);
     this.sceneManager.add(object);
+    this.syncTrafficRoads();
     this.select(object);
   }
 
@@ -224,6 +233,7 @@ export class PlacementController {
 
     const step = THREE.MathUtils.degToRad(target.userData.rotationStep ?? 90);
     target.rotation.y += step * direction;
+    this.syncTrafficRoads();
     this.updateSelectionReadout();
   }
 
@@ -244,6 +254,7 @@ export class PlacementController {
     clone.userData.editorObject = true;
     this.placed.push(clone);
     this.sceneManager.add(clone);
+    this.syncTrafficRoads();
     this.select(clone);
   }
 
@@ -252,6 +263,8 @@ export class PlacementController {
     this.clearGhost();
     this.placed.forEach((object) => this.sceneManager.remove(object));
     this.placed = [];
+    this.traffic.reset();
+    this.syncTrafficRoads();
 
     if (this.elements.generateStatus) {
       this.elements.generateStatus.textContent = 'Ready';
@@ -313,6 +326,7 @@ export class PlacementController {
     }
 
     this.elements.modeLabel.textContent = 'Generated town: press Generate Town again to reshuffle.';
+    this.syncTrafficRoads();
   }
 
   placeGeneratedAsset(asset, cellX, cellZ, rotation) {
@@ -335,6 +349,7 @@ export class PlacementController {
 
     this.sceneManager.remove(this.selected);
     this.placed = this.placed.filter((object) => object !== this.selected);
+    this.syncTrafficRoads();
     this.select(null);
   }
 
@@ -389,6 +404,10 @@ export class PlacementController {
       this.sceneManager.remove(this.ghost);
       this.ghost = null;
     }
+  }
+
+  syncTrafficRoads() {
+    this.traffic.syncRoads(this.placed);
   }
 }
 

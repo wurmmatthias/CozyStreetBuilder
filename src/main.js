@@ -113,6 +113,10 @@ const controller = new PlacementController(scene, {
   modeLabel: document.querySelector('#mode-label'),
 });
 
+if (import.meta.env.DEV) {
+  window.cozyStreetBuilder = { scene, controller };
+}
+
 const buildMode = document.querySelector('#build-mode');
 const generateMode = document.querySelector('#generate-mode');
 const viewMode = document.querySelector('#view-mode');

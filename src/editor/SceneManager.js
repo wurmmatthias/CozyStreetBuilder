@@ -9,6 +9,7 @@ export class SceneManager {
     this.lastFrameTime = performance.now();
     this.gridVisible = true;
     this.pressedKeys = new Set();
+    this.updaters = new Set();
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -101,6 +102,14 @@ export class SceneManager {
     this.scene.remove(object);
   }
 
+  addUpdater(updater) {
+    this.updaters.add(updater);
+  }
+
+  removeUpdater(updater) {
+    this.updaters.delete(updater);
+  }
+
   resize() {
     const { clientWidth, clientHeight } = this.container;
     this.camera.aspect = clientWidth / Math.max(clientHeight, 1);
@@ -174,6 +183,7 @@ export class SceneManager {
       const delta = Math.min((now - this.lastFrameTime) / 1000, 0.05);
       this.lastFrameTime = now;
       this.updateKeyboardCamera(delta);
+      this.updaters.forEach((updater) => updater(delta, now));
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
       requestAnimationFrame(render);

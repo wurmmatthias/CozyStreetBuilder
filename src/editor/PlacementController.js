@@ -2,6 +2,14 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { degreesFromRadians, makePlaceableClone, setGhostMaterial, setSelectedTint, snapToGrid } from './assetUtils.js';
 
+const TOWN_CELL_SIZE = 2;
+const DIRECTIONS = [
+  { id: 'n', dx: 0, dz: -1 },
+  { id: 'e', dx: 1, dz: 0 },
+  { id: 's', dx: 0, dz: 1 },
+  { id: 'w', dx: -1, dz: 0 },
+];
+
 export class PlacementController {
   constructor(sceneManager, elements) {
     this.sceneManager = sceneManager;
@@ -40,12 +48,19 @@ export class PlacementController {
 
   setMode(mode) {
     this.mode = mode;
-    this.sceneManager.setBuildMode(mode === 'build');
+    this.sceneManager.setBuildMode(mode !== 'view');
 
     if (mode === 'view') {
       this.clearGhost();
       this.select(null);
       this.elements.modeLabel.textContent = 'View mode: WASD moves, arrow keys rotate, mouse orbits.';
+      return;
+    }
+
+    if (mode === 'generate') {
+      this.clearGhost();
+      this.select(null);
+      this.elements.modeLabel.textContent = 'Generate mode: create a random complete town.';
       return;
     }
 
@@ -232,6 +247,87 @@ export class PlacementController {
     this.select(clone);
   }
 
+  clearTown() {
+    this.select(null);
+    this.clearGhost();
+    this.placed.forEach((object) => this.sceneManager.remove(object));
+    this.placed = [];
+
+    if (this.elements.generateStatus) {
+      this.elements.generateStatus.textContent = 'Ready';
+    }
+  }
+
+  generateTown() {
+    const roadParts = getRoadParts(this.assets);
+    const buildingAssets = this.assets.filter((asset) => asset.kind === 'building');
+
+    if (!roadParts.any || buildingAssets.length === 0) {
+      if (this.elements.generateStatus) {
+        this.elements.generateStatus.textContent = 'Missing assets';
+      }
+      return;
+    }
+
+    this.clearTown();
+
+    const town = createRoadNetwork();
+    const roadSet = new Set(town.cells.map(cellKey));
+    let roadCount = 0;
+
+    town.cells.forEach((cell) => {
+      const connections = getRoadConnections(cell, roadSet);
+      const roadPlacement = getRoadPlacement(connections, roadParts);
+
+      if (!roadPlacement.asset) {
+        return;
+      }
+
+      this.placeGeneratedAsset(roadPlacement.asset, cell.x, cell.z, roadPlacement.rotation);
+      roadCount += 1;
+    });
+
+    const lots = createBuildingLots(town, roadSet);
+    const usedCells = new Set(roadSet);
+    const maxBuildings = randomInt(36, 54);
+    let buildingCount = 0;
+
+    shuffle(lots).some((lot) => {
+      if (buildingCount >= maxBuildings) {
+        return true;
+      }
+
+      if (usedCells.has(cellKey(lot))) {
+        return false;
+      }
+
+      const asset = pickBuildingAsset(buildingAssets);
+      this.placeGeneratedAsset(asset, lot.x, lot.z, rotationFacingRoad(lot.roadDirections));
+      usedCells.add(cellKey(lot));
+      buildingCount += 1;
+      return false;
+    });
+
+    if (this.elements.generateStatus) {
+      this.elements.generateStatus.textContent = `${roadCount} roads, ${buildingCount} buildings`;
+    }
+
+    this.elements.modeLabel.textContent = 'Generated town: press Generate Town again to reshuffle.';
+  }
+
+  placeGeneratedAsset(asset, cellX, cellZ, rotation) {
+    const object = makePlaceableClone(asset.source, asset);
+    object.position.set(cellX * TOWN_CELL_SIZE, 0, cellZ * TOWN_CELL_SIZE);
+    object.rotation.y = rotation;
+    object.userData.editorObject = true;
+    object.userData.assetId = asset.id;
+    object.userData.assetName = asset.name;
+    object.userData.generatedTownObject = true;
+    this.placed.push(object);
+    this.sceneManager.add(object);
+    return object;
+  }
+
   deleteSelected() {
     if (this.mode !== 'build' || !this.selected) {
       return;
@@ -345,4 +441,184 @@ function formatNumber(value) {
 
 function isTypingTarget(target) {
   return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable;
+}
+
+function createRoadNetwork() {
+  const span = randomInt(7, 9);
+  const lineCandidates = [-6, -4, -2, 0, 2, 4, 6].filter((value) => Math.abs(value) < span);
+  const verticals = [0, ...sample(lineCandidates.filter((value) => value !== 0), randomInt(2, 3))].sort((a, b) => a - b);
+  const horizontals = [0, ...sample(lineCandidates.filter((value) => value !== 0), randomInt(2, 3))].sort((a, b) => a - b);
+  const roads = new Map();
+
+  verticals.forEach((x) => {
+    for (let z = -span; z <= span; z += 1) {
+      addRoad(roads, x, z);
+    }
+  });
+
+  horizontals.forEach((z) => {
+    for (let x = -span; x <= span; x += 1) {
+      addRoad(roads, x, z);
+    }
+  });
+
+  const intersections = verticals.flatMap((x) => horizontals.map((z) => ({ x, z })));
+  const spurCount = randomInt(5, 8);
+
+  for (let index = 0; index < spurCount; index += 1) {
+    const start = randomItem(intersections);
+    const direction = randomItem(DIRECTIONS);
+    const length = randomInt(2, 5);
+
+    for (let step = 1; step <= length; step += 1) {
+      const x = start.x + direction.dx * step;
+      const z = start.z + direction.dz * step;
+
+      if (Math.abs(x) > span || Math.abs(z) > span) {
+        break;
+      }
+
+      addRoad(roads, x, z);
+    }
+  }
+
+  return {
+    span,
+    cells: [...roads.values()].sort((a, b) => a.z - b.z || a.x - b.x),
+  };
+}
+
+function createBuildingLots(town, roadSet) {
+  const lots = [];
+
+  for (let z = -town.span; z <= town.span; z += 1) {
+    for (let x = -town.span; x <= town.span; x += 1) {
+      const cell = { x, z };
+
+      if (roadSet.has(cellKey(cell))) {
+        continue;
+      }
+
+      const roadDirections = getRoadConnections(cell, roadSet);
+
+      if (roadDirections.length === 0 || Math.random() < 0.18) {
+        continue;
+      }
+
+      lots.push({ x, z, roadDirections });
+    }
+  }
+
+  return lots;
+}
+
+function getRoadParts(assets) {
+  const roads = assets.filter((asset) => asset.kind === 'road');
+  const find = (...needles) => roads.find((asset) => needles.every((needle) => searchableName(asset).includes(needle)));
+  const corners = roads.filter((asset) => searchableName(asset).includes('corner'));
+
+  return {
+    any: roads[0] ?? null,
+    straight: find('road', 'straight') ?? roads[0] ?? null,
+    corner: corners,
+    t: find('tsplit') ?? find('t split') ?? find('t-split') ?? roads[0] ?? null,
+    cross: find('junction') ?? find('crossing') ?? roads[0] ?? null,
+  };
+}
+
+function getRoadPlacement(connections, roadParts) {
+  const has = (id) => connections.includes(id);
+
+  if (connections.length >= 4) {
+    return { asset: roadParts.cross, rotation: 0 };
+  }
+
+  if (connections.length === 3) {
+    if (!has('s')) return { asset: roadParts.t, rotation: 0 };
+    if (!has('w')) return { asset: roadParts.t, rotation: Math.PI / 2 };
+    if (!has('n')) return { asset: roadParts.t, rotation: Math.PI };
+    return { asset: roadParts.t, rotation: -Math.PI / 2 };
+  }
+
+  if (connections.length === 2 && !areOpposite(connections[0], connections[1])) {
+    if (has('n') && has('e')) return { asset: randomItem(roadParts.corner) ?? roadParts.straight, rotation: 0 };
+    if (has('e') && has('s')) return { asset: randomItem(roadParts.corner) ?? roadParts.straight, rotation: Math.PI / 2 };
+    if (has('s') && has('w')) return { asset: randomItem(roadParts.corner) ?? roadParts.straight, rotation: Math.PI };
+    return { asset: randomItem(roadParts.corner) ?? roadParts.straight, rotation: -Math.PI / 2 };
+  }
+
+  const eastWest = has('e') || has('w');
+  return {
+    asset: roadParts.straight,
+    rotation: eastWest ? Math.PI / 2 : 0,
+  };
+}
+
+function getRoadConnections(cell, roadSet) {
+  return DIRECTIONS
+    .filter((direction) => roadSet.has(cellKey({ x: cell.x + direction.dx, z: cell.z + direction.dz })))
+    .map((direction) => direction.id);
+}
+
+function rotationFacingRoad(roadDirections) {
+  const direction = randomItem(roadDirections) ?? 's';
+
+  if (direction === 'n') return Math.PI;
+  if (direction === 'e') return Math.PI / 2;
+  if (direction === 'w') return -Math.PI / 2;
+  return 0;
+}
+
+function pickBuildingAsset(buildings) {
+  const sorted = [...buildings].sort((a, b) => searchableName(a).localeCompare(searchableName(b)));
+  const roll = Math.random();
+  const skyscraper = sorted.find((asset) => searchableName(asset).includes('skyscraper'));
+  const store = sorted.find((asset) => searchableName(asset).includes('store'));
+
+  if (skyscraper && roll > 0.9) {
+    return skyscraper;
+  }
+
+  if (store && roll < 0.18) {
+    return store;
+  }
+
+  return randomItem(sorted.filter((asset) => asset !== skyscraper)) ?? randomItem(sorted);
+}
+
+function addRoad(roads, x, z) {
+  roads.set(cellKey({ x, z }), { x, z });
+}
+
+function cellKey(cell) {
+  return `${cell.x},${cell.z}`;
+}
+
+function searchableName(asset) {
+  return `${asset.id} ${asset.name}`.toLowerCase();
+}
+
+function areOpposite(first, second) {
+  return (first === 'n' && second === 's') || (first === 's' && second === 'n') || (first === 'e' && second === 'w') || (first === 'w' && second === 'e');
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function sample(items, count) {
+  return shuffle([...items]).slice(0, count);
+}
+
+function shuffle(items) {
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
+  }
+
+  return items;
 }

@@ -17,6 +17,7 @@ app.innerHTML = `
         <h2>Mode</h2>
         <div class="mode-toggle" role="group" aria-label="Editor mode">
           <button class="is-active" id="build-mode" type="button">Build</button>
+          <button id="generate-mode" type="button">Generate</button>
           <button id="view-mode" type="button">View</button>
         </div>
       </section>
@@ -71,6 +72,20 @@ app.innerHTML = `
           </div>
         </dl>
       </section>
+
+      <section class="panel-section generate-only">
+        <h2>Town</h2>
+        <div class="button-row action-row">
+          <button id="generate-town" class="primary-action" type="button">Generate Town</button>
+          <button id="clear-town" type="button">Clear</button>
+        </div>
+        <dl class="status-list">
+          <div>
+            <dt>Layout</dt>
+            <dd id="generate-status">Ready</dd>
+          </div>
+        </dl>
+      </section>
     </aside>
 
     <section class="viewport-wrap">
@@ -94,10 +109,12 @@ const controller = new PlacementController(scene, {
   selectedName: document.querySelector('#selected-name'),
   selectedPosition: document.querySelector('#selected-position'),
   selectedRotation: document.querySelector('#selected-rotation'),
+  generateStatus: document.querySelector('#generate-status'),
   modeLabel: document.querySelector('#mode-label'),
 });
 
 const buildMode = document.querySelector('#build-mode');
+const generateMode = document.querySelector('#generate-mode');
 const viewMode = document.querySelector('#view-mode');
 const gridSize = document.querySelector('#grid-size');
 const gridSizeValue = document.querySelector('#grid-size-value');
@@ -105,11 +122,13 @@ const gridSizeValue = document.querySelector('#grid-size-value');
 function setMode(mode) {
   shell.dataset.mode = mode;
   buildMode.classList.toggle('is-active', mode === 'build');
+  generateMode.classList.toggle('is-active', mode === 'generate');
   viewMode.classList.toggle('is-active', mode === 'view');
   controller.setMode(mode);
 }
 
 buildMode.addEventListener('click', () => setMode('build'));
+generateMode.addEventListener('click', () => setMode('generate'));
 viewMode.addEventListener('click', () => setMode('view'));
 
 gridSize.addEventListener('input', () => {
@@ -123,6 +142,8 @@ document.querySelector('#rotate-right').addEventListener('click', () => controll
 document.querySelector('#duplicate').addEventListener('click', () => controller.duplicateSelected());
 document.querySelector('#delete-selected').addEventListener('click', () => controller.deleteSelected());
 document.querySelector('#reload-assets').addEventListener('click', () => controller.loadAssets(assetPacks));
+document.querySelector('#generate-town').addEventListener('click', () => controller.generateTown());
+document.querySelector('#clear-town').addEventListener('click', () => controller.clearTown());
 
 await controller.loadAssets(assetPacks);
 setMode('build');

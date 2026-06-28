@@ -14,6 +14,7 @@ Open the local URL Vite prints, usually `http://127.0.0.1:5173/`.
 ## Controls
 
 - Use `Build` mode to show the grid and edit tools.
+- Use `Generate` mode to create a complete randomized town with connected roads and street-facing buildings.
 - Use `View` mode to hide the grid and build tools.
 - Pick a road or building asset from the left panel in Build mode.
 - Move over the grid to preview placement, then click to place.

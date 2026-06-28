@@ -99,8 +99,9 @@ h2 {
   align-items: center;
 }
 
-.builder-shell[data-mode='view'] .build-only,
-.builder-shell[data-mode='view'] .viewport-toolbar .build-kbd {
+.builder-shell:not([data-mode='build']) .build-only,
+.builder-shell:not([data-mode='build']) .viewport-toolbar .build-kbd,
+.builder-shell:not([data-mode='generate']) .generate-only {
   display: none;
 }
 
@@ -240,10 +241,29 @@ input[type='range'] {
   border-radius: 8px;
 }
 
+.action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.button-row .primary-action {
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  color: #f8fbf6;
+  background: #416b52;
+  border-color: #31533f;
+}
+
 .button-row button:hover,
 .icon-button:hover {
   background: #e6f0dd;
   border-color: #416b52;
+}
+
+.button-row .primary-action:hover {
+  color: #ffffff;
+  background: #315b43;
 }
 
 .status-list {

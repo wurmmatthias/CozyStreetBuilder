@@ -1,8 +1,10 @@
+const assetUrl = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
 export const assetPacks = [
   {
     id: 'road-bits',
     name: 'Road Bits',
-    url: '/assets/road-bits.glb',
+    url: assetUrl('/assets/road-bits.glb'),
     splitChildren: true,
     kind: 'road',
     scale: 1,
@@ -11,7 +13,7 @@ export const assetPacks = [
   {
     id: 'store',
     name: 'Store',
-    url: '/assets/Store.glb',
+    url: assetUrl('/assets/Store.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -19,7 +21,7 @@ export const assetPacks = [
   {
     id: 'small-building',
     name: 'Small Building',
-    url: '/assets/Small%20Building.glb',
+    url: assetUrl('/assets/Small%20Building.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -27,7 +29,7 @@ export const assetPacks = [
   {
     id: 'low-building',
     name: 'Low Building',
-    url: '/assets/Low%20Building.glb',
+    url: assetUrl('/assets/Low%20Building.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -35,7 +37,7 @@ export const assetPacks = [
   {
     id: 'large-building',
     name: 'Large Building',
-    url: '/assets/Large%20Building.glb',
+    url: assetUrl('/assets/Large%20Building.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -43,7 +45,7 @@ export const assetPacks = [
   {
     id: 'building-red',
     name: 'Building Red',
-    url: '/assets/Building%20Red.glb',
+    url: assetUrl('/assets/Building%20Red.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -51,7 +53,7 @@ export const assetPacks = [
   {
     id: 'wide-building',
     name: 'Wide Building',
-    url: '/assets/Wide%20Building.glb',
+    url: assetUrl('/assets/Wide%20Building.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -59,7 +61,7 @@ export const assetPacks = [
   {
     id: 'pizza-corner',
     name: 'Pizza Corner',
-    url: '/assets/Pizza%20Corner.glb',
+    url: assetUrl('/assets/Pizza%20Corner.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -67,7 +69,7 @@ export const assetPacks = [
   {
     id: 'skyscraper',
     name: 'Skyscraper',
-    url: '/assets/Skyscraper.glb',
+    url: assetUrl('/assets/Skyscraper.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -75,7 +77,7 @@ export const assetPacks = [
   {
     id: 'skyscraper-2',
     name: 'Skyscraper 2',
-    url: '/assets/Skyscraper2.glb',
+    url: assetUrl('/assets/Skyscraper2.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -83,7 +85,7 @@ export const assetPacks = [
   {
     id: 'skyscraper-3',
     name: 'Skyscraper 3',
-    url: '/assets/Skyscraper3.glb',
+    url: assetUrl('/assets/Skyscraper3.glb'),
     kind: 'building',
     scale: 1,
     rotationStep: 90,
@@ -91,7 +93,7 @@ export const assetPacks = [
   {
     id: 'tree',
     name: 'Tree',
-    url: '/assets/misc/Tree.glb',
+    url: assetUrl('/assets/misc/Tree.glb'),
     kind: 'foliage',
     scale: 1,
     rotationStep: 45,
@@ -99,7 +101,7 @@ export const assetPacks = [
   {
     id: 'pine-trees',
     name: 'Pine Trees',
-    url: '/assets/misc/Pine%20Trees.glb',
+    url: assetUrl('/assets/misc/Pine%20Trees.glb'),
     splitChildren: true,
     kind: 'foliage',
     scale: 1,
@@ -108,7 +110,7 @@ export const assetPacks = [
   {
     id: 'car',
     name: 'Car',
-    url: '/assets/cars/Car.glb',
+    url: assetUrl('/assets/cars/Car.glb'),
     kind: 'car',
     scale: 0.0108,
     rotationStep: 90,
@@ -118,7 +120,7 @@ export const assetPacks = [
   {
     id: 'red-car',
     name: 'Red Car',
-    url: '/assets/cars/Red%20Car.glb',
+    url: assetUrl('/assets/cars/Red%20Car.glb'),
     kind: 'car',
     scale: 0.52,
     rotationStep: 90,
@@ -128,7 +130,7 @@ export const assetPacks = [
   {
     id: 'police-car',
     name: 'Police Car',
-    url: '/assets/cars/Police%20Car.glb',
+    url: assetUrl('/assets/cars/Police%20Car.glb'),
     kind: 'car',
     scale: 0.315,
     rotationStep: 90,
@@ -138,7 +140,7 @@ export const assetPacks = [
   {
     id: 'animated-woman',
     name: 'Animated Woman',
-    url: '/assets/people/Animated%20Woman.glb',
+    url: assetUrl('/assets/people/Animated%20Woman.glb'),
     kind: 'person',
     scale: 0.22,
     rotationStep: 90,
@@ -148,7 +150,7 @@ export const assetPacks = [
   {
     id: 'animated-woman-2',
     name: 'Animated Woman 2',
-    url: '/assets/people/Animated%20Woman%20%281%29.glb',
+    url: assetUrl('/assets/people/Animated%20Woman%20%281%29.glb'),
     kind: 'person',
     scale: 0.076,
     rotationStep: 90,
@@ -158,7 +160,7 @@ export const assetPacks = [
   {
     id: 'hoodie-character',
     name: 'Hoodie Character',
-    url: '/assets/people/Hoodie%20Character.glb',
+    url: assetUrl('/assets/people/Hoodie%20Character.glb'),
     kind: 'person',
     scale: 0.22,
     rotationStep: 90,
@@ -168,7 +170,7 @@ export const assetPacks = [
   {
     id: 'man-in-long-sleeves',
     name: 'Man in Long Sleeves',
-    url: '/assets/people/Man%20in%20Long%20Sleeves.glb',
+    url: assetUrl('/assets/people/Man%20in%20Long%20Sleeves.glb'),
     kind: 'person',
     scale: 0.082,
     rotationStep: 90,
@@ -178,7 +180,7 @@ export const assetPacks = [
   {
     id: 'man-in-suit',
     name: 'Man in Suit',
-    url: '/assets/people/Man%20in%20Suit.glb',
+    url: assetUrl('/assets/people/Man%20in%20Suit.glb'),
     kind: 'person',
     scale: 0.082,
     rotationStep: 90,
@@ -188,7 +190,7 @@ export const assetPacks = [
   {
     id: 'worker',
     name: 'Worker',
-    url: '/assets/people/Worker.glb',
+    url: assetUrl('/assets/people/Worker.glb'),
     kind: 'person',
     scale: 0.216,
     rotationStep: 90,

@@ -1,15 +1,25 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+
+const CLOUD_ASSET_URL = '/assets/misc/Clouds.glb';
+const CLOUD_COUNT = 16;
+const CLOUD_FIELD_HALF_WIDTH = 76;
+const CLOUD_MIN_HEIGHT = 14;
+const CLOUD_MAX_HEIGHT = 28;
+const CLOUD_WRAP_PADDING = 24;
 
 export class SceneManager {
   constructor(container) {
     this.container = container;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#dbe9f2');
+    this.scene.background = new THREE.Color('#87ceeb');
     this.lastFrameTime = performance.now();
     this.gridVisible = true;
     this.pressedKeys = new Set();
     this.updaters = new Set();
+    this.clouds = [];
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -31,6 +41,7 @@ export class SceneManager {
     this.grid = this.createGrid();
     this.scene.add(this.ground, this.grid);
     this.addLighting();
+    this.addClouds();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
@@ -92,6 +103,82 @@ export class SceneManager {
     sun.shadow.camera.top = 35;
     sun.shadow.camera.bottom = -35;
     this.scene.add(sun);
+  }
+
+  async addClouds() {
+    const loader = new GLTFLoader();
+
+    try {
+      const gltf = await loader.loadAsync(CLOUD_ASSET_URL);
+      const sources = getCloudSources(gltf.scene);
+
+      if (sources.length === 0) {
+        return;
+      }
+
+      for (let index = 0; index < CLOUD_COUNT; index += 1) {
+        this.createCloud(sources);
+      }
+
+      this.addUpdater((delta, now) => this.updateClouds(delta, now));
+    } catch (error) {
+      console.warn('Could not load atmosphere clouds.', error);
+    }
+  }
+
+  createCloud(sources) {
+    const cloud = new THREE.Group();
+    const model = cloneSkeleton(randomItem(sources));
+    const targetWidth = randomFloat(7, 26);
+
+    model.traverse((child) => {
+      child.castShadow = false;
+      child.receiveShadow = false;
+
+      if (child.material) {
+        child.material = child.material.clone();
+      }
+    });
+
+    normalizeCloudModel(model, targetWidth);
+    cloud.add(model);
+    cloud.position.set(
+      randomFloat(-CLOUD_FIELD_HALF_WIDTH, CLOUD_FIELD_HALF_WIDTH),
+      randomFloat(CLOUD_MIN_HEIGHT, CLOUD_MAX_HEIGHT),
+      randomFloat(-CLOUD_FIELD_HALF_WIDTH * 0.85, CLOUD_FIELD_HALF_WIDTH * 0.85),
+    );
+    cloud.rotation.y = randomFloat(0, Math.PI * 2);
+    cloud.userData.baseY = cloud.position.y;
+    cloud.userData.targetWidth = targetWidth;
+    cloud.userData.driftSpeed = randomFloat(0.45, 1.35);
+    cloud.userData.driftDirection = randomItem([-1, 1]);
+    cloud.userData.bobAmount = randomFloat(0.08, 0.34);
+    cloud.userData.bobSpeed = randomFloat(0.35, 0.8);
+    cloud.userData.phase = randomFloat(0, Math.PI * 2);
+    cloud.userData.turnSpeed = randomFloat(-0.018, 0.018);
+
+    this.clouds.push(cloud);
+    this.scene.add(cloud);
+  }
+
+  updateClouds(delta, now) {
+    const time = now / 1000;
+    const wrapLimit = CLOUD_FIELD_HALF_WIDTH + CLOUD_WRAP_PADDING;
+
+    this.clouds.forEach((cloud) => {
+      const data = cloud.userData;
+      cloud.position.x += data.driftSpeed * data.driftDirection * delta;
+      cloud.position.y = data.baseY + Math.sin(time * data.bobSpeed + data.phase) * data.bobAmount;
+      cloud.rotation.y += data.turnSpeed * delta;
+
+      if (cloud.position.x > wrapLimit) {
+        cloud.position.x = -wrapLimit;
+        cloud.position.z = randomFloat(-CLOUD_FIELD_HALF_WIDTH * 0.85, CLOUD_FIELD_HALF_WIDTH * 0.85);
+      } else if (cloud.position.x < -wrapLimit) {
+        cloud.position.x = wrapLimit;
+        cloud.position.z = randomFloat(-CLOUD_FIELD_HALF_WIDTH * 0.85, CLOUD_FIELD_HALF_WIDTH * 0.85);
+      }
+    });
   }
 
   add(object) {
@@ -202,4 +289,47 @@ function getCameraKey(event) {
 
 function isTypingTarget(target) {
   return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable;
+}
+
+function getCloudSources(scene) {
+  const directChildren = scene.children.filter((child) => hasRenderableMesh(child));
+
+  if (directChildren.length === 1 && !directChildren[0].isMesh) {
+    const nestedChildren = directChildren[0].children.filter((child) => hasRenderableMesh(child));
+
+    if (nestedChildren.length > 1) {
+      return nestedChildren;
+    }
+  }
+
+  return directChildren.length > 0 ? directChildren : [scene].filter((child) => hasRenderableMesh(child));
+}
+
+function hasRenderableMesh(object) {
+  let hasMesh = false;
+  object.traverse((child) => {
+    hasMesh = hasMesh || child.isMesh;
+  });
+  return hasMesh;
+}
+
+function normalizeCloudModel(model, targetWidth) {
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const longestSide = Math.max(size.x, size.y, size.z, 0.001);
+  model.scale.multiplyScalar(targetWidth / longestSide);
+  model.updateMatrixWorld(true);
+
+  const scaledBox = new THREE.Box3().setFromObject(model);
+  const center = scaledBox.getCenter(new THREE.Vector3());
+  model.position.sub(center);
+}
+
+function randomFloat(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
 }

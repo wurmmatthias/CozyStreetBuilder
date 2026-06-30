@@ -65,6 +65,7 @@ button {
 
 h1,
 h2,
+h3,
 p,
 dl,
 dd {
@@ -83,6 +84,14 @@ h2 {
   color: #29362f;
   font-size: 0.9rem;
   letter-spacing: 0;
+}
+
+h3 {
+  color: #607063;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .panel-section {
@@ -150,6 +159,12 @@ h2 {
   justify-content: space-between;
 }
 
+.asset-palette,
+.asset-group {
+  display: grid;
+  gap: 10px;
+}
+
 .asset-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -203,6 +218,13 @@ h2 {
     linear-gradient(#8e6e58 0 24%, #725842 24% 100%);
 }
 
+.asset-thumb--foliage {
+  background:
+    radial-gradient(circle at 50% 34%, #4f8a5a 0 27%, transparent 28%),
+    linear-gradient(90deg, transparent 42%, #7b5637 42% 58%, transparent 58%),
+    linear-gradient(#d7e5cd, #edf4e6);
+}
+
 .loading-note {
   grid-column: 1 / -1;
   color: #617063;
@@ -211,11 +233,15 @@ h2 {
 
 .control-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 44px;
+  grid-template-columns: 72px minmax(0, 1fr) 64px;
   gap: 10px;
   color: #425247;
   font-size: 0.88rem;
   font-weight: 700;
+}
+
+.control-row output {
+  text-align: right;
 }
 
 input[type='range'] {

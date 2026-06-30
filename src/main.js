@@ -46,7 +46,7 @@ app.innerHTML = `
           <h2>Assets</h2>
           <button class="icon-button" id="reload-assets" type="button" title="Reload assets" aria-label="Reload assets">R</button>
         </div>
-        <div class="asset-grid" id="asset-grid"></div>
+        <div class="asset-palette" id="asset-grid"></div>
       </section>
 
       <section class="panel-section build-only">
@@ -84,6 +84,26 @@ app.innerHTML = `
 
       <section class="panel-section generate-only">
         <h2>Town</h2>
+        <div class="control-row">
+          <label for="town-size">Size</label>
+          <input id="town-size" type="range" min="0" max="2" value="1" step="1" />
+          <output id="town-size-value">Medium</output>
+        </div>
+        <div class="control-row">
+          <label for="building-density">Buildings</label>
+          <input id="building-density" type="range" min="0" max="100" value="70" step="5" />
+          <output id="building-density-value">70%</output>
+        </div>
+        <div class="control-row">
+          <label for="foliage-density">Foliage</label>
+          <input id="foliage-density" type="range" min="0" max="100" value="55" step="5" />
+          <output id="foliage-density-value">55%</output>
+        </div>
+        <div class="control-row">
+          <label for="generate-traffic-density">Traffic</label>
+          <input id="generate-traffic-density" type="range" min="0" max="100" value="50" step="5" />
+          <output id="generate-traffic-density-value">50%</output>
+        </div>
         <div class="button-row action-row">
           <button id="generate-town" class="primary-action" type="button">Generate Town</button>
           <button id="clear-town" type="button">Clear</button>
@@ -133,6 +153,15 @@ const gridSize = document.querySelector('#grid-size');
 const gridSizeValue = document.querySelector('#grid-size-value');
 const trafficDensity = document.querySelector('#traffic-density');
 const trafficDensityValue = document.querySelector('#traffic-density-value');
+const townSize = document.querySelector('#town-size');
+const townSizeValue = document.querySelector('#town-size-value');
+const buildingDensity = document.querySelector('#building-density');
+const buildingDensityValue = document.querySelector('#building-density-value');
+const foliageDensity = document.querySelector('#foliage-density');
+const foliageDensityValue = document.querySelector('#foliage-density-value');
+const generateTrafficDensity = document.querySelector('#generate-traffic-density');
+const generateTrafficDensityValue = document.querySelector('#generate-traffic-density-value');
+const townSizeLabels = ['Small', 'Medium', 'Large'];
 
 function setMode(mode) {
   shell.dataset.mode = mode;
@@ -155,6 +184,35 @@ gridSize.addEventListener('input', () => {
 trafficDensity.addEventListener('input', () => {
   const value = Number(trafficDensity.value);
   trafficDensityValue.value = `${value}%`;
+  controller.setTrafficDensity(value / 100);
+  generateTrafficDensity.value = trafficDensity.value;
+  generateTrafficDensityValue.value = `${value}%`;
+});
+
+townSize.addEventListener('input', () => {
+  const value = Number(townSize.value);
+  townSizeValue.value = townSizeLabels[value] ?? 'Medium';
+  controller.setGenerationOptions({ townSize: value });
+});
+
+buildingDensity.addEventListener('input', () => {
+  const value = Number(buildingDensity.value);
+  buildingDensityValue.value = `${value}%`;
+  controller.setGenerationOptions({ buildingDensity: value / 100 });
+});
+
+foliageDensity.addEventListener('input', () => {
+  const value = Number(foliageDensity.value);
+  foliageDensityValue.value = `${value}%`;
+  controller.setGenerationOptions({ foliageDensity: value / 100 });
+});
+
+generateTrafficDensity.addEventListener('input', () => {
+  const value = Number(generateTrafficDensity.value);
+  generateTrafficDensityValue.value = `${value}%`;
+  trafficDensity.value = generateTrafficDensity.value;
+  trafficDensityValue.value = `${value}%`;
+  controller.setGenerationOptions({ trafficDensity: value / 100 });
   controller.setTrafficDensity(value / 100);
 });
 

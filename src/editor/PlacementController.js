@@ -29,6 +29,12 @@ export class PlacementController {
     this.lastSnap = new THREE.Vector3();
     this.traffic = new TrafficController(this.sceneManager);
     this.pedestrians = new PedestrianController(this.sceneManager);
+    this.generationOptions = {
+      townSize: 1,
+      buildingDensity: 0.7,
+      foliageDensity: 0.55,
+      trafficDensity: 0.5,
+    };
 
     const canvas = this.sceneManager.renderer.domElement;
     canvas.addEventListener('pointermove', (event) => this.onPointerMove(event));
@@ -109,17 +115,36 @@ export class PlacementController {
   renderAssetButtons() {
     this.elements.assetGrid.innerHTML = '';
 
-    this.assets.filter((asset) => asset.showInPalette !== false).forEach((asset) => {
-      const button = document.createElement('button');
-      button.className = 'asset-button';
-      button.type = 'button';
-      button.dataset.assetId = asset.id;
-      button.innerHTML = `
-        <span class="asset-thumb asset-thumb--${asset.kind}"></span>
-        <span>${asset.name}</span>
-      `;
-      button.addEventListener('click', () => this.chooseAsset(asset.id));
-      this.elements.assetGrid.append(button);
+    [
+      { kind: 'road', title: 'Roads' },
+      { kind: 'building', title: 'Buildings' },
+      { kind: 'foliage', title: 'Foliage' },
+    ].forEach((group) => {
+      const assets = this.assets.filter((asset) => asset.showInPalette !== false && asset.kind === group.kind);
+
+      if (assets.length === 0) {
+        return;
+      }
+
+      const section = document.createElement('section');
+      section.className = 'asset-group';
+      section.innerHTML = `<h3>${group.title}</h3><div class="asset-grid"></div>`;
+      const grid = section.querySelector('.asset-grid');
+
+      assets.forEach((asset) => {
+        const button = document.createElement('button');
+        button.className = 'asset-button';
+        button.type = 'button';
+        button.dataset.assetId = asset.id;
+        button.innerHTML = `
+          <span class="asset-thumb asset-thumb--${asset.kind}"></span>
+          <span>${asset.name}</span>
+        `;
+        button.addEventListener('click', () => this.chooseAsset(asset.id));
+        grid.append(button);
+      });
+
+      this.elements.assetGrid.append(section);
     });
   }
 
@@ -148,7 +173,20 @@ export class PlacementController {
   }
 
   setTrafficDensity(density) {
-    this.traffic.setDensity(density);
+    const nextDensity = THREE.MathUtils.clamp(density, 0, 1);
+    this.generationOptions.trafficDensity = nextDensity;
+    this.traffic.setDensity(nextDensity);
+  }
+
+  setGenerationOptions(options) {
+    this.generationOptions = {
+      ...this.generationOptions,
+      ...options,
+    };
+    this.generationOptions.townSize = THREE.MathUtils.clamp(Math.round(this.generationOptions.townSize), 0, 2);
+    this.generationOptions.buildingDensity = THREE.MathUtils.clamp(this.generationOptions.buildingDensity, 0, 1);
+    this.generationOptions.foliageDensity = THREE.MathUtils.clamp(this.generationOptions.foliageDensity, 0, 1);
+    this.generationOptions.trafficDensity = THREE.MathUtils.clamp(this.generationOptions.trafficDensity, 0, 1);
   }
 
   onPointerMove(event) {
@@ -284,6 +322,7 @@ export class PlacementController {
   generateTown() {
     const roadParts = getRoadParts(this.assets);
     const buildingAssets = this.assets.filter((asset) => asset.kind === 'building');
+    const foliageAssets = this.assets.filter((asset) => asset.kind === 'foliage');
 
     if (!roadParts.any || buildingAssets.length === 0) {
       if (this.elements.generateStatus) {
@@ -293,8 +332,9 @@ export class PlacementController {
     }
 
     this.clearTown();
+    this.traffic.setDensity(this.generationOptions.trafficDensity);
 
-    const town = createRoadNetwork();
+    const town = createRoadNetwork(this.generationOptions.townSize);
     const roadSet = new Set(town.cells.map(cellKey));
     let roadCount = 0;
 
@@ -312,7 +352,7 @@ export class PlacementController {
 
     const lots = createBuildingLots(town, roadSet);
     const usedCells = new Set(roadSet);
-    const maxBuildings = randomInt(36, 54);
+    const maxBuildings = Math.round(lots.length * THREE.MathUtils.lerp(0, 0.82, this.generationOptions.buildingDensity));
     let buildingCount = 0;
 
     shuffle(lots).some((lot) => {
@@ -331,8 +371,24 @@ export class PlacementController {
       return false;
     });
 
+    const foliageLots = createFoliageLots(town, usedCells);
+    const maxFoliage = foliageAssets.length === 0 ? 0 : Math.round(foliageLots.length * THREE.MathUtils.lerp(0, 0.46, this.generationOptions.foliageDensity));
+    let foliageCount = 0;
+
+    shuffle(foliageLots).some((lot) => {
+      if (foliageCount >= maxFoliage) {
+        return true;
+      }
+
+      const asset = randomItem(foliageAssets);
+      this.placeGeneratedAsset(asset, lot.x, lot.z, randomFoliageRotation());
+      usedCells.add(cellKey(lot));
+      foliageCount += 1;
+      return false;
+    });
+
     if (this.elements.generateStatus) {
-      this.elements.generateStatus.textContent = `${roadCount} roads, ${buildingCount} buildings`;
+      this.elements.generateStatus.textContent = `${roadCount} roads, ${buildingCount} buildings, ${foliageCount} trees`;
     }
 
     this.elements.modeLabel.textContent = 'Generated town: press Generate Town again to reshuffle.';
@@ -473,11 +529,12 @@ function isTypingTarget(target) {
   return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable;
 }
 
-function createRoadNetwork() {
-  const span = randomInt(7, 9);
-  const lineCandidates = [-6, -4, -2, 0, 2, 4, 6].filter((value) => Math.abs(value) < span);
-  const verticals = [0, ...sample(lineCandidates.filter((value) => value !== 0), randomInt(2, 3))].sort((a, b) => a - b);
-  const horizontals = [0, ...sample(lineCandidates.filter((value) => value !== 0), randomInt(2, 3))].sort((a, b) => a - b);
+function createRoadNetwork(townSize) {
+  const preset = getTownPreset(townSize);
+  const span = preset.span;
+  const lineCandidates = preset.lineCandidates.filter((value) => Math.abs(value) < span);
+  const verticals = [0, ...sample(lineCandidates.filter((value) => value !== 0), randomInt(preset.lineCount[0], preset.lineCount[1]))].sort((a, b) => a - b);
+  const horizontals = [0, ...sample(lineCandidates.filter((value) => value !== 0), randomInt(preset.lineCount[0], preset.lineCount[1]))].sort((a, b) => a - b);
   const roads = new Map();
 
   verticals.forEach((x) => {
@@ -493,12 +550,12 @@ function createRoadNetwork() {
   });
 
   const intersections = verticals.flatMap((x) => horizontals.map((z) => ({ x, z })));
-  const spurCount = randomInt(5, 8);
+  const spurCount = randomInt(preset.spurCount[0], preset.spurCount[1]);
 
   for (let index = 0; index < spurCount; index += 1) {
     const start = randomItem(intersections);
     const direction = randomItem(DIRECTIONS);
-    const length = randomInt(2, 5);
+    const length = randomInt(preset.spurLength[0], preset.spurLength[1]);
 
     for (let step = 1; step <= length; step += 1) {
       const x = start.x + direction.dx * step;
@@ -516,6 +573,34 @@ function createRoadNetwork() {
     span,
     cells: [...roads.values()].sort((a, b) => a.z - b.z || a.x - b.x),
   };
+}
+
+function getTownPreset(townSize) {
+  const presets = [
+    {
+      span: 5,
+      lineCandidates: [-4, -2, 0, 2, 4],
+      lineCount: [1, 2],
+      spurCount: [2, 4],
+      spurLength: [1, 3],
+    },
+    {
+      span: 8,
+      lineCandidates: [-6, -4, -2, 0, 2, 4, 6],
+      lineCount: [2, 3],
+      spurCount: [5, 8],
+      spurLength: [2, 5],
+    },
+    {
+      span: 11,
+      lineCandidates: [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10],
+      lineCount: [3, 5],
+      spurCount: [9, 14],
+      spurLength: [3, 7],
+    },
+  ];
+
+  return presets[townSize] ?? presets[1];
 }
 
 function createBuildingLots(town, roadSet) {
@@ -536,6 +621,24 @@ function createBuildingLots(town, roadSet) {
       }
 
       lots.push({ x, z, roadDirections });
+    }
+  }
+
+  return lots;
+}
+
+function createFoliageLots(town, usedCells) {
+  const lots = [];
+
+  for (let z = -town.span; z <= town.span; z += 1) {
+    for (let x = -town.span; x <= town.span; x += 1) {
+      const cell = { x, z };
+
+      if (usedCells.has(cellKey(cell))) {
+        continue;
+      }
+
+      lots.push(cell);
     }
   }
 
@@ -597,6 +700,10 @@ function rotationFacingRoad(roadDirections) {
   if (direction === 'e') return Math.PI / 2;
   if (direction === 'w') return -Math.PI / 2;
   return 0;
+}
+
+function randomFoliageRotation() {
+  return randomInt(0, 7) * (Math.PI / 4);
 }
 
 function pickBuildingAsset(buildings) {

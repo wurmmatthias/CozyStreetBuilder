@@ -89,6 +89,23 @@ export const assetPacks = [
     rotationStep: 90,
   },
   {
+    id: 'tree',
+    name: 'Tree',
+    url: '/assets/misc/Tree.glb',
+    kind: 'foliage',
+    scale: 1,
+    rotationStep: 45,
+  },
+  {
+    id: 'pine-trees',
+    name: 'Pine Trees',
+    url: '/assets/misc/Pine%20Trees.glb',
+    splitChildren: true,
+    kind: 'foliage',
+    scale: 1,
+    rotationStep: 45,
+  },
+  {
     id: 'car',
     name: 'Car',
     url: '/assets/cars/Car.glb',

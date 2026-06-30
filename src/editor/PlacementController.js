@@ -17,6 +17,13 @@ export class PlacementController {
     this.sceneManager = sceneManager;
     this.elements = elements;
     this.loader = new GLTFLoader();
+    this.thumbnailRenderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: true,
+      preserveDrawingBuffer: true,
+    });
+    this.thumbnailRenderer.setPixelRatio(1);
+    this.thumbnailRenderer.setSize(96, 96, false);
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.gridSize = 2;
@@ -132,12 +139,13 @@ export class PlacementController {
       const grid = section.querySelector('.asset-grid');
 
       assets.forEach((asset) => {
+        const thumbnail = this.renderAssetThumbnail(asset);
         const button = document.createElement('button');
         button.className = 'asset-button';
         button.type = 'button';
         button.dataset.assetId = asset.id;
         button.innerHTML = `
-          <span class="asset-thumb asset-thumb--${asset.kind}"></span>
+          ${thumbnail ? `<span class="asset-preview"><img src="${thumbnail}" alt="" draggable="false" /></span>` : `<span class="asset-thumb asset-thumb--${asset.kind}"></span>`}
           <span>${asset.name}</span>
         `;
         button.addEventListener('click', () => this.chooseAsset(asset.id));
@@ -146,6 +154,53 @@ export class PlacementController {
 
       this.elements.assetGrid.append(section);
     });
+  }
+
+  renderAssetThumbnail(asset) {
+    if (asset.thumbnailUrl) {
+      return asset.thumbnailUrl;
+    }
+
+    try {
+      const previewScene = new THREE.Scene();
+      const model = makePlaceableClone(asset.source, asset);
+      model.rotation.y = asset.kind === 'road' ? -Math.PI / 4 : Math.PI / 5;
+      model.updateMatrixWorld(true);
+
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const longestSide = Math.max(size.x, size.y, size.z, 0.01);
+      const viewSize = Math.max(longestSide * 1.35, 1.4);
+      const camera = new THREE.OrthographicCamera(
+        -viewSize / 2,
+        viewSize / 2,
+        viewSize / 2,
+        -viewSize / 2,
+        0.01,
+        100,
+      );
+      const cameraDirection = asset.kind === 'road'
+        ? new THREE.Vector3(1, 1.65, 1)
+        : new THREE.Vector3(1.15, 0.95, 1.25);
+
+      camera.position.copy(center).add(cameraDirection.normalize().multiplyScalar(longestSide * 3.2));
+      camera.lookAt(center);
+      previewScene.add(model);
+      previewScene.add(new THREE.HemisphereLight('#f7f4e8', '#536566', 2.4));
+
+      const keyLight = new THREE.DirectionalLight('#fff1cf', 3.8);
+      keyLight.position.set(4, 7, 5);
+      previewScene.add(keyLight);
+
+      this.thumbnailRenderer.setClearColor(0x000000, 0);
+      this.thumbnailRenderer.render(previewScene, camera);
+      asset.thumbnailUrl = this.thumbnailRenderer.domElement.toDataURL('image/png');
+      return asset.thumbnailUrl;
+    } catch (error) {
+      console.warn(`Could not render thumbnail for ${asset.name}.`, error);
+      return '';
+    }
   }
 
   chooseAsset(assetId) {

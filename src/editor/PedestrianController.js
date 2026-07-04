@@ -65,6 +65,38 @@ const OCCUPATIONS = [
   'Market Vendor',
   'Urban Planner',
 ];
+const WANTED_REASONS = [
+  'Tax fraud',
+  'Goose theft',
+  'Soup crimes',
+  'Duck dodging',
+  'Pie theft',
+  'Bad vibes',
+  'Bell theft',
+  'Cow tipping',
+  'Sock fraud',
+  'Muffin bribe',
+  'Bread crimes',
+  'Loud sneezing',
+  'Fake coupons',
+  'Hat theft',
+  'Illegal naps',
+  'Fish yelling',
+  'Horse parking',
+  'Cursed tea',
+  'Pigeon deals',
+  'Snack loitering',
+  'Barrel crimes',
+  'Kazoo noise',
+  'Wagon racing',
+  'Soup smuggling',
+  'Jam fraud',
+  'Apple theft',
+  'Duck bribery',
+  'Cheese hoarding',
+  'Fence hopping',
+  'Suspicious shoes',
+];
 const MOOD_METERS = [
   '😟',
   '😐 😐',
@@ -82,6 +114,7 @@ const DIRECTIONS = {
 
 const DIRECTION_IDS = Object.keys(DIRECTIONS);
 const OPPOSITE = { n: 's', e: 'w', s: 'n', w: 'e' };
+const WANTED_CHANCE = 0.18;
 
 export class PedestrianController {
   constructor(sceneManager) {
@@ -189,6 +222,8 @@ export class PedestrianController {
     object.userData.residentOccupation = identity.occupation;
     object.userData.residentAge = identity.age;
     object.userData.residentMood = identity.moodMeter;
+    object.userData.residentWanted = identity.wanted;
+    object.userData.residentWantedReason = identity.wantedReason;
     object.position.lerpVectors(from, to, progress);
     object.rotation.y = getTravelRotation(from, to, asset);
     this.sceneManager.add(object);
@@ -296,6 +331,18 @@ export class PedestrianController {
   removePerson(index) {
     const [person] = this.people.splice(index, 1);
     this.sceneManager.remove(person.object);
+  }
+
+  detainPerson(person) {
+    const index = this.people.indexOf(person);
+
+    if (index === -1) {
+      return false;
+    }
+
+    person.identity.detained = true;
+    this.removePerson(index);
+    return true;
   }
 
   getPickableObjects() {
@@ -421,12 +468,18 @@ function randomItem(items) {
 }
 
 function createResidentIdentity(id) {
+  const wanted = Math.random() < WANTED_CHANCE;
+
   return {
     id,
     name: `${randomItem(FIRST_NAMES)} ${randomItem(LAST_NAMES)}`,
     occupation: randomItem(OCCUPATIONS),
     age: randomInt(18, 65),
     moodMeter: randomItem(MOOD_METERS),
+    wanted,
+    wantedReason: wanted ? randomItem(WANTED_REASONS) : '',
+    policeCalled: false,
+    detained: false,
   };
 }
 

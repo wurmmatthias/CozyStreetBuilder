@@ -56,6 +56,7 @@ export class PlacementController {
     this.canvas.addEventListener('pointercancel', (event) => this.onPointerUp(event));
     this.canvas.addEventListener('pointerleave', () => this.updateCanvasCursor(null));
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
+    this.elements.callPolice?.addEventListener('click', () => this.callPoliceOnSelectedResident());
     this.sceneManager.addUpdater(() => this.updateSelectedResident());
   }
 
@@ -627,7 +628,82 @@ export class PlacementController {
       this.elements.residentMood.textContent = person.identity.moodMeter;
     }
 
+    this.updateResidentWantedReadout(person);
     this.elements.modeLabel.textContent = `Following ${person.identity.name}.`;
+  }
+
+  updateResidentWantedReadout(person = this.selectedResident) {
+    if (!person) {
+      return;
+    }
+
+    const { identity } = person;
+    const isWanted = Boolean(identity.wanted);
+    const policeCalled = Boolean(identity.policeCalled);
+
+    if (this.elements.residentWantedStatusRow) {
+      this.elements.residentWantedStatusRow.hidden = !isWanted;
+    }
+
+    if (this.elements.residentWantedStatus) {
+      this.elements.residentWantedStatus.textContent = policeCalled ? 'Wanted - police en route' : 'Wanted';
+      this.elements.residentWantedStatus.classList.toggle('is-wanted', isWanted);
+    }
+
+    if (this.elements.residentWantedReasonRow) {
+      this.elements.residentWantedReasonRow.hidden = !isWanted;
+    }
+
+    if (this.elements.residentWantedReason) {
+      this.elements.residentWantedReason.textContent = identity.wantedReason || '-';
+    }
+
+    if (this.elements.callPolice) {
+      const buttonLabel = this.elements.callPolice.querySelector('span');
+      this.elements.callPolice.hidden = !isWanted || identity.detained;
+      this.elements.callPolice.disabled = policeCalled;
+
+      if (buttonLabel) {
+        buttonLabel.textContent = policeCalled ? 'Police En Route' : 'Call Police';
+      }
+    }
+  }
+
+  callPoliceOnSelectedResident() {
+    const person = this.selectedResident;
+
+    if (!person?.identity?.wanted || person.identity.policeCalled) {
+      return;
+    }
+
+    person.identity.policeCalled = true;
+    this.updateResidentWantedReadout(person);
+
+    const dispatched = this.traffic.dispatchPoliceToPerson(person, {
+      onStatusChange: (message) => {
+        this.elements.modeLabel.textContent = `${message} Target: ${person.identity.name}.`;
+      },
+      onUnavailable: (message) => {
+        person.identity.policeCalled = false;
+        this.updateResidentWantedReadout(person);
+        this.elements.modeLabel.textContent = message;
+      },
+      onDetained: (target) => {
+        const name = target.identity.name;
+        this.pedestrians.detainPerson(target);
+
+        if (this.selectedResident === target) {
+          this.selectResident(null);
+        }
+
+        this.elements.modeLabel.textContent = `${name} was detained by police.`;
+      },
+    });
+
+    if (!dispatched) {
+      person.identity.policeCalled = false;
+      this.updateResidentWantedReadout(person);
+    }
   }
 
   hasSelectedResident() {

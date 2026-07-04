@@ -184,7 +184,19 @@ app.innerHTML = `
                 <dt>Mood</dt>
                 <dd id="resident-mood" class="resident-mood">-</dd>
               </div>
+              <div id="resident-wanted-status-row" hidden>
+                <dt>Status</dt>
+                <dd id="resident-wanted-status">Wanted</dd>
+              </div>
+              <div id="resident-wanted-reason-row" hidden>
+                <dt>Wanted For</dt>
+                <dd id="resident-wanted-reason">-</dd>
+              </div>
             </dl>
+            <button id="call-police" class="primary-action police-action" type="button" hidden>
+              <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+              <span>Call Police</span>
+            </button>
           </div>
         </section>
 
@@ -216,6 +228,11 @@ const controller = new PlacementController(scene, {
   residentOccupation: document.querySelector('#resident-occupation'),
   residentAge: document.querySelector('#resident-age'),
   residentMood: document.querySelector('#resident-mood'),
+  residentWantedStatusRow: document.querySelector('#resident-wanted-status-row'),
+  residentWantedStatus: document.querySelector('#resident-wanted-status'),
+  residentWantedReason: document.querySelector('#resident-wanted-reason'),
+  residentWantedReasonRow: document.querySelector('#resident-wanted-reason-row'),
+  callPolice: document.querySelector('#call-police'),
 });
 
 if (import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {

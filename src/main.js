@@ -1,4 +1,5 @@
 import './styles/app.css';
+import '@fortawesome/fontawesome-free/css/all.min.css';
 import { SceneManager } from './editor/SceneManager.js';
 import { PlacementController } from './editor/PlacementController.js';
 import { assetPacks } from './editor/assetCatalog.js';
@@ -11,6 +12,10 @@ app.innerHTML = `
       <div id="viewport" class="viewport" aria-label="3D street builder viewport"></div>
 
       <div class="hud-root" aria-label="Street builder interface">
+        <button class="music-toggle" id="music-toggle" type="button" aria-label="Turn music on" aria-pressed="false" title="Turn music on">
+          <i class="fa-solid fa-volume-xmark" id="music-toggle-icon" aria-hidden="true"></i>
+        </button>
+
         <section class="game-window command-window" data-window="command" aria-label="Command window">
           <header class="window-titlebar" data-drag-handle>
             <div>
@@ -232,6 +237,31 @@ const windows = [...document.querySelectorAll('.game-window')];
 const dockButtons = [...document.querySelectorAll('[data-window-open]')];
 const uiToggle = document.querySelector('[data-ui-toggle]');
 const compactUiQuery = window.matchMedia('(max-width: 760px)');
+const musicToggle = document.querySelector('#music-toggle');
+const musicToggleIcon = document.querySelector('#music-toggle-icon');
+const backgroundMusic = new Audio('/assets/sounds/bg.mp3');
+
+backgroundMusic.loop = true;
+backgroundMusic.muted = true;
+backgroundMusic.preload = 'auto';
+
+function setMusicMuted(isMuted) {
+  backgroundMusic.muted = isMuted;
+  musicToggle.classList.toggle('is-muted', isMuted);
+  musicToggleIcon.className = isMuted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+  musicToggle.setAttribute('aria-pressed', String(!isMuted));
+  musicToggle.setAttribute('aria-label', isMuted ? 'Turn music on' : 'Mute music');
+  musicToggle.title = isMuted ? 'Turn music on' : 'Mute music';
+
+  if (isMuted) {
+    backgroundMusic.pause();
+    return;
+  }
+
+  backgroundMusic.play().catch(() => {
+    setMusicMuted(true);
+  });
+}
 
 function setMode(mode) {
   shell.dataset.mode = mode;
@@ -407,6 +437,11 @@ dockButtons.forEach((button) => {
 });
 
 uiToggle.addEventListener('click', toggleInterface);
+musicToggle.addEventListener('click', () => {
+  setMusicMuted(!backgroundMusic.muted);
+});
+
+setMusicMuted(true);
 
 if (compactUiQuery.matches) {
   document.querySelector('[data-window="placement"]').hidden = true;

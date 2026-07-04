@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
-const CLOUD_ASSET_URL = '/assets/misc/Clouds.glb';
+const CLOUD_ASSET_URL = `${import.meta.env.BASE_URL}assets/misc/Clouds.glb`;
 const CLOUD_COUNT = 16;
 const CLOUD_FIELD_HALF_WIDTH = 76;
 const CLOUD_MIN_HEIGHT = 14;

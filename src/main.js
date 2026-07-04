@@ -12,9 +12,14 @@ app.innerHTML = `
       <div id="viewport" class="viewport" aria-label="3D street builder viewport"></div>
 
       <div class="hud-root" aria-label="Street builder interface">
-        <button class="music-toggle" id="music-toggle" type="button" aria-label="Turn music on" aria-pressed="false" title="Turn music on">
-          <i class="fa-solid fa-volume-xmark" id="music-toggle-icon" aria-hidden="true"></i>
-        </button>
+        <div class="top-right-controls" aria-label="Viewport controls">
+          <button class="hud-button" id="fullscreen-toggle" type="button" aria-label="Enter fullscreen" title="Enter fullscreen">
+            <i class="fa-solid fa-expand" id="fullscreen-toggle-icon" aria-hidden="true"></i>
+          </button>
+          <button class="hud-button music-toggle" id="music-toggle" type="button" aria-label="Turn music on" aria-pressed="false" title="Turn music on">
+            <i class="fa-solid fa-volume-xmark" id="music-toggle-icon" aria-hidden="true"></i>
+          </button>
+        </div>
 
         <section class="game-window command-window" data-window="command" aria-label="Command window">
           <header class="window-titlebar" data-drag-handle>
@@ -240,6 +245,8 @@ const compactUiQuery = window.matchMedia('(max-width: 760px)');
 const assetUrl = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 const musicToggle = document.querySelector('#music-toggle');
 const musicToggleIcon = document.querySelector('#music-toggle-icon');
+const fullscreenToggle = document.querySelector('#fullscreen-toggle');
+const fullscreenToggleIcon = document.querySelector('#fullscreen-toggle-icon');
 const backgroundMusic = new Audio(assetUrl('/assets/sounds/bg.mp3'));
 
 backgroundMusic.loop = true;
@@ -262,6 +269,25 @@ function setMusicMuted(isMuted) {
   backgroundMusic.play().catch(() => {
     setMusicMuted(true);
   });
+}
+
+function setFullscreenButtonState(isFullscreen) {
+  fullscreenToggleIcon.className = isFullscreen ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+  fullscreenToggle.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen');
+  fullscreenToggle.title = isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen';
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await shell.requestFullscreen();
+  } catch {
+    setFullscreenButtonState(Boolean(document.fullscreenElement));
+  }
 }
 
 function setMode(mode) {
@@ -438,10 +464,21 @@ dockButtons.forEach((button) => {
 });
 
 uiToggle.addEventListener('click', toggleInterface);
+fullscreenToggle.addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  setFullscreenButtonState(Boolean(document.fullscreenElement));
+});
 musicToggle.addEventListener('click', () => {
   setMusicMuted(!backgroundMusic.muted);
 });
 
+if (!document.fullscreenEnabled) {
+  fullscreenToggle.disabled = true;
+  fullscreenToggle.title = 'Fullscreen is not available';
+  fullscreenToggle.setAttribute('aria-label', 'Fullscreen is not available');
+}
+
+setFullscreenButtonState(Boolean(document.fullscreenElement));
 setMusicMuted(true);
 
 if (compactUiQuery.matches) {

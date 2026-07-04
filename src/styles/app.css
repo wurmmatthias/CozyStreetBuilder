@@ -100,10 +100,17 @@ dd {
   z-index: 4;
 }
 
-.music-toggle {
+.top-right-controls {
   position: absolute;
   top: 18px;
   right: 18px;
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+  z-index: 8;
+}
+
+.hud-button {
   display: grid;
   place-items: center;
   width: 46px;
@@ -120,24 +127,27 @@ dd {
     0 10px 0 rgb(179 129 92 / 0.12),
     0 18px 36px rgb(117 88 65 / 0.18),
     inset 0 1px 0 rgb(255 255 255 / 0.95);
-  pointer-events: auto;
-  z-index: 8;
   backdrop-filter: blur(16px);
 }
 
-.music-toggle:hover {
+.hud-button:hover {
   color: #4c3f37;
   background: linear-gradient(180deg, #ffffff, var(--sky));
   border-color: #76bde5;
   transform: translateY(-1px);
 }
 
-.music-toggle:active {
+.hud-button:active {
   border-bottom-width: 2px;
   transform: translateY(1px);
 }
 
-.music-toggle .fa-solid {
+.hud-button:disabled {
+  opacity: 0.55;
+  transform: none;
+}
+
+.hud-button .fa-solid {
   font-size: 1.18rem;
   line-height: 1;
 }

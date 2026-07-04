@@ -230,6 +230,33 @@ app.innerHTML = `
           </div>
         </section>
 
+        <section class="game-window fire-window" data-window="fire" aria-label="Fire response window" hidden>
+          <header class="window-titlebar emergency-titlebar" data-drag-handle>
+            <div>
+              <p class="eyebrow">Emergency</p>
+              <h2 id="fire-building-name">Building Fire</h2>
+            </div>
+            <button class="window-close" type="button" data-window-close="fire" title="Close fire response" aria-label="Close fire response">X</button>
+          </header>
+
+          <div class="window-body fire-window-body">
+            <dl class="status-list">
+              <div>
+                <dt>Status</dt>
+                <dd id="fire-status">Smoke reported</dd>
+              </div>
+              <div>
+                <dt>Location</dt>
+                <dd id="fire-location">-</dd>
+              </div>
+            </dl>
+            <button id="dispatch-fire-truck" class="primary-action fire-action" type="button">
+              <i class="fa-solid fa-truck-medical" aria-hidden="true"></i>
+              <span>Dispatch Fire Truck</span>
+            </button>
+          </div>
+        </section>
+
         <nav class="skill-dock" aria-label="Skill dock">
           <button class="dock-button dock-minimize" type="button" data-ui-toggle title="Minify interface" aria-label="Minify interface">-</button>
           <button class="dock-button" type="button" data-skill="build" data-window-open="assets" title="Build skills">Build</button>
@@ -263,6 +290,11 @@ const controller = new PlacementController(scene, {
   residentWantedReason: document.querySelector('#resident-wanted-reason'),
   residentWantedReasonRow: document.querySelector('#resident-wanted-reason-row'),
   callPolice: document.querySelector('#call-police'),
+  fireWindow: document.querySelector('[data-window="fire"]'),
+  fireBuildingName: document.querySelector('#fire-building-name'),
+  fireStatus: document.querySelector('#fire-status'),
+  fireLocation: document.querySelector('#fire-location'),
+  dispatchFireTruck: document.querySelector('#dispatch-fire-truck'),
 });
 
 if (import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
@@ -377,6 +409,7 @@ function clearMainMenuTown() {
 function enterGameMode(mode) {
   shell.dataset.screen = 'game';
   clearMainMenuTown();
+  controller.setFireSimulationEnabled(true);
   setMode(mode);
   openWindow('command');
 }
@@ -426,6 +459,10 @@ function restoreInterface() {
   shell.dataset.ui = 'expanded';
   windows.forEach((windowElement) => {
     if (windowElement.dataset.window === 'resident' && !controller.hasSelectedResident()) {
+      return;
+    }
+
+    if (windowElement.dataset.window === 'fire' && !controller.hasSelectedFire()) {
       return;
     }
 

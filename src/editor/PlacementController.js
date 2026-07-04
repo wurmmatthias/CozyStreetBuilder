@@ -5,6 +5,11 @@ import { PedestrianController } from './PedestrianController.js';
 import { TrafficController } from './TrafficController.js';
 
 const TOWN_CELL_SIZE = 2;
+const FIRE_CHECK_MIN_SECONDS = 28;
+const FIRE_CHECK_MAX_SECONDS = 70;
+const FIRE_START_CHANCE = 0.9;
+const MAX_ACTIVE_FIRES = 1;
+const SMOKE_PUFF_COUNT = 12;
 const DIRECTIONS = [
   { id: 'n', dx: 0, dz: -1 },
   { id: 'e', dx: 1, dz: 0 },
@@ -31,9 +36,14 @@ export class PlacementController {
     this.assets = [];
     this.placed = [];
     this.activeAsset = null;
+    this.fireAsset = null;
     this.ghost = null;
     this.selected = null;
     this.selectedResident = null;
+    this.selectedFire = null;
+    this.fireIncidents = [];
+    this.fireSimulationEnabled = false;
+    this.nextFireCheck = randomFloat(FIRE_CHECK_MIN_SECONDS, FIRE_CHECK_MAX_SECONDS);
     this.residentCamera = elements.residentViewport
       ? this.sceneManager.createFollowCameraFeed(elements.residentViewport)
       : null;
@@ -57,7 +67,9 @@ export class PlacementController {
     this.canvas.addEventListener('pointerleave', () => this.updateCanvasCursor(null));
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
     this.elements.callPolice?.addEventListener('click', () => this.callPoliceOnSelectedResident());
+    this.elements.dispatchFireTruck?.addEventListener('click', () => this.callFireTruckOnSelectedFire());
     this.sceneManager.addUpdater(() => this.updateSelectedResident());
+    this.sceneManager.addUpdater((delta, now) => this.updateFireIncidents(delta, now));
   }
 
   async loadAssets(packs) {
@@ -67,6 +79,7 @@ export class PlacementController {
 
     const loadedPacks = await Promise.all(packs.map((pack) => this.loadPack(pack)));
     this.assets = loadedPacks.flat();
+    this.fireAsset = this.assets.find((asset) => asset.kind === 'effect' && asset.id === 'fire') ?? null;
     this.traffic.setAssets(this.assets);
     this.pedestrians.setAssets(this.assets);
     this.syncTrafficRoads();
@@ -88,16 +101,19 @@ export class PlacementController {
     if (mode === 'view') {
       this.clearGhost();
       this.select(null);
-      this.elements.modeLabel.textContent = 'View mode is open. Click an inhabitant to follow them.';
+      this.elements.modeLabel.textContent = 'View mode is open. Click an inhabitant or a smoking building.';
       return;
     }
 
     if (mode === 'generate') {
       this.clearGhost();
       this.select(null);
+      this.selectFire(null);
       this.elements.modeLabel.textContent = 'Town generator is ready.';
       return;
     }
+
+    this.selectFire(null);
 
     if (this.activeAsset) {
       this.chooseAsset(this.activeAsset.id);
@@ -257,6 +273,10 @@ export class PlacementController {
     this.generationOptions.trafficDensity = THREE.MathUtils.clamp(this.generationOptions.trafficDensity, 0, 1);
   }
 
+  setFireSimulationEnabled(enabled) {
+    this.fireSimulationEnabled = enabled;
+  }
+
   onPointerMove(event) {
     if (this.mode !== 'build') {
       return;
@@ -286,6 +306,15 @@ export class PlacementController {
   onPointerDown(event) {
     if (this.mode === 'view' && event.button === 0) {
       this.updatePointer(event);
+      const burningBuilding = this.getBurningBuildingUnderPointer();
+
+      if (burningBuilding) {
+        this.selectFire(burningBuilding);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       const resident = this.getResidentUnderPointer();
 
       if (resident) {
@@ -334,6 +363,7 @@ export class PlacementController {
   onKeyDown(event) {
     if (this.mode === 'view' && event.key === 'Escape') {
       this.selectResident(null);
+      this.selectFire(null);
       event.preventDefault();
       return;
     }
@@ -463,6 +493,8 @@ export class PlacementController {
   clearTown() {
     this.select(null);
     this.selectResident(null);
+    this.selectFire(null);
+    this.clearAllFireIncidents();
     this.clearGhost();
     this.placed.forEach((object) => this.sceneManager.remove(object));
     this.placed = [];
@@ -569,6 +601,10 @@ export class PlacementController {
       return;
     }
 
+    if (this.selected.userData.fireIncident) {
+      this.extinguishBuildingFire(this.selected);
+    }
+
     this.sceneManager.remove(this.selected);
     this.placed = this.placed.filter((object) => object !== this.selected);
     this.syncTrafficRoads();
@@ -606,6 +642,7 @@ export class PlacementController {
       return;
     }
 
+    this.selectFire(null);
     setSelectedTint(person.object, true);
 
     if (this.elements.residentWindow) {
@@ -706,6 +743,105 @@ export class PlacementController {
     }
   }
 
+  callFireTruckOnSelectedFire() {
+    const building = this.selectedFire;
+    const incident = building?.userData.fireIncident;
+
+    if (!building || !incident || incident.truckDispatched) {
+      return;
+    }
+
+    incident.truckDispatched = true;
+    this.updateFireReadout(building);
+
+    const dispatched = this.traffic.dispatchFireTruckToBuilding(building, {
+      onStatusChange: (message) => {
+        if (building.userData.fireIncident && this.selectedFire === building) {
+          this.updateFireReadout(building, message);
+        }
+
+        this.elements.modeLabel.textContent = `${message} Target: ${building.userData.assetName}.`;
+      },
+      onUnavailable: (message) => {
+        if (building.userData.fireIncident) {
+          incident.truckDispatched = false;
+        }
+
+        this.updateFireReadout(building, message);
+        this.elements.modeLabel.textContent = message;
+      },
+      onExtinguished: (target) => {
+        const name = target.userData.assetName;
+        this.extinguishBuildingFire(target);
+        this.elements.modeLabel.textContent = `${name} fire was put out.`;
+      },
+    });
+
+    if (!dispatched) {
+      incident.truckDispatched = false;
+      this.updateFireReadout(building);
+    }
+  }
+
+  hasSelectedFire() {
+    return Boolean(this.selectedFire?.userData.fireIncident);
+  }
+
+  selectFire(building) {
+    if (this.selectedFire) {
+      setSelectedTint(this.selectedFire, false);
+    }
+
+    this.selectedFire = building?.userData.fireIncident ? building : null;
+
+    if (!this.selectedFire) {
+      if (this.elements.fireWindow) {
+        this.elements.fireWindow.hidden = true;
+      }
+
+      return;
+    }
+
+    setSelectedTint(this.selectedFire, true);
+    this.selectResident(null);
+
+    if (this.elements.fireWindow) {
+      this.elements.fireWindow.hidden = false;
+    }
+
+    this.updateFireReadout(this.selectedFire);
+    this.elements.modeLabel.textContent = `${this.selectedFire.userData.assetName} is on fire.`;
+  }
+
+  updateFireReadout(building = this.selectedFire, statusText = null) {
+    const incident = building?.userData.fireIncident;
+
+    if (!incident) {
+      return;
+    }
+
+    if (this.elements.fireBuildingName) {
+      this.elements.fireBuildingName.textContent = building.userData.assetName;
+    }
+
+    if (this.elements.fireStatus) {
+      this.elements.fireStatus.textContent = statusText ?? (incident.truckDispatched ? 'Fire truck en route' : 'Smoke reported');
+    }
+
+    if (this.elements.fireLocation) {
+      this.elements.fireLocation.textContent = `${formatNumber(building.position.x)}, ${formatNumber(building.position.z)}`;
+    }
+
+    if (this.elements.dispatchFireTruck) {
+      const buttonLabel = this.elements.dispatchFireTruck.querySelector('span');
+      this.elements.dispatchFireTruck.disabled = incident.truckDispatched;
+
+      if (buttonLabel) {
+        buttonLabel.textContent = incident.truckDispatched ? 'Truck Dispatched' : 'Dispatch Fire Truck';
+      }
+    }
+  }
+
   hasSelectedResident() {
     return Boolean(this.selectedResident);
   }
@@ -717,6 +853,82 @@ export class PlacementController {
 
     this.selectResident(null);
     this.elements.modeLabel.textContent = 'That inhabitant left the visible streets.';
+  }
+
+  updateFireIncidents(delta, now) {
+    [...this.fireIncidents].forEach((incident) => {
+      if (!incident.building.parent) {
+        this.extinguishBuildingFire(incident.building);
+      }
+    });
+
+    this.fireIncidents.forEach((incident) => animateBuildingFire(incident, delta, now));
+
+    if (!this.fireSimulationEnabled || this.fireIncidents.length >= MAX_ACTIVE_FIRES) {
+      return;
+    }
+
+    this.nextFireCheck -= delta;
+
+    if (this.nextFireCheck > 0) {
+      return;
+    }
+
+    this.nextFireCheck = randomFloat(FIRE_CHECK_MIN_SECONDS, FIRE_CHECK_MAX_SECONDS);
+
+    if (Math.random() <= FIRE_START_CHANCE) {
+      this.startRandomBuildingFire();
+    }
+  }
+
+  startRandomBuildingFire() {
+    const candidates = this.placed.filter((object) => (
+      object.userData.assetKind === 'building' &&
+      !object.userData.fireIncident
+    ));
+
+    if (candidates.length === 0) {
+      return;
+    }
+
+    const building = randomItem(candidates);
+    this.startBuildingFire(building);
+    this.elements.modeLabel.textContent = `Smoke is rising from ${building.userData.assetName}.`;
+  }
+
+  startBuildingFire(building) {
+    if (!building || building.userData.fireIncident) {
+      return null;
+    }
+
+    const incident = createBuildingFireIncident(building, this.fireAsset);
+    building.userData.fireIncident = incident;
+    this.fireIncidents.push(incident);
+    return incident;
+  }
+
+  extinguishBuildingFire(building) {
+    const incident = building?.userData.fireIncident;
+
+    if (!incident) {
+      return;
+    }
+
+    if (this.selectedFire === building) {
+      this.selectFire(null);
+    }
+
+    building.remove(incident.group);
+    disposeObject3D(incident.group);
+    delete building.userData.fireIncident;
+    this.fireIncidents = this.fireIncidents.filter((item) => item !== incident);
+  }
+
+  clearAllFireIncidents() {
+    [...this.fireIncidents].forEach((incident) => {
+      this.extinguishBuildingFire(incident.building);
+    });
+    this.fireIncidents = [];
   }
 
   updateSelectionReadout() {
@@ -766,6 +978,20 @@ export class PlacementController {
       this.sceneManager.renderer.domElement,
       this.pedestrians.people,
     );
+  }
+
+  getBurningBuildingUnderPointer() {
+    if (this.fireIncidents.length === 0) {
+      return null;
+    }
+
+    this.raycaster.setFromCamera(this.pointer, this.sceneManager.camera);
+    const buildings = this.fireIncidents.map((incident) => incident.building);
+    const hits = this.raycaster.intersectObjects(buildings, true);
+    const hit = hits.find((item) => item.object.parent);
+    const building = hit ? findEditorRoot(hit.object) : null;
+
+    return building?.userData.fireIncident ? building : null;
   }
 
   updateCanvasCursor(placed) {
@@ -855,6 +1081,139 @@ function getResidentPickHeight(object) {
   const box = new THREE.Box3().setFromObject(object);
   const height = box.max.y - box.min.y;
   return THREE.MathUtils.clamp(height * 0.55, 0.25, 0.9);
+}
+
+function createBuildingFireIncident(building, fireAsset) {
+  building.updateMatrixWorld(true);
+  const roof = getBuildingRoofInfo(building);
+  const group = new THREE.Group();
+  const fireModels = [];
+  const smokePuffs = [];
+  const fireCount = randomInt(2, 4);
+
+  group.name = 'Building Fire Incident';
+  building.add(group);
+
+  for (let index = 0; index < fireCount; index += 1) {
+    const fire = fireAsset
+      ? makePlaceableClone(fireAsset.source, {
+        ...fireAsset,
+        scale: (fireAsset.scale ?? 1) * randomFloat(0.72, 1.18),
+      })
+      : createFallbackFireModel();
+
+    fire.position.set(
+      randomFloat(-roof.halfX, roof.halfX),
+      roof.y,
+      randomFloat(-roof.halfZ, roof.halfZ),
+    );
+    fire.rotation.y = randomFloat(0, Math.PI * 2);
+    fire.userData.baseScale = fire.scale.clone();
+    fire.userData.flickerPhase = randomFloat(0, Math.PI * 2);
+    fireModels.push(fire);
+    group.add(fire);
+  }
+
+  const smokeGeometry = new THREE.SphereGeometry(0.22, 8, 8);
+
+  for (let index = 0; index < SMOKE_PUFF_COUNT; index += 1) {
+    const material = new THREE.MeshBasicMaterial({
+      color: '#6f7270',
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    const puff = new THREE.Mesh(smokeGeometry.clone(), material);
+    const base = new THREE.Vector3(
+      randomFloat(-roof.halfX * 0.8, roof.halfX * 0.8),
+      roof.y + randomFloat(0.05, 0.45),
+      randomFloat(-roof.halfZ * 0.8, roof.halfZ * 0.8),
+    );
+
+    puff.userData.base = base;
+    puff.userData.life = Math.random();
+    puff.userData.duration = randomFloat(3.4, 5.8);
+    puff.userData.rise = randomFloat(1.35, 2.45);
+    puff.userData.drift = new THREE.Vector3(randomFloat(-0.35, 0.35), 0, randomFloat(-0.35, 0.35));
+    puff.userData.baseSize = randomFloat(0.65, 1.2);
+    puff.position.copy(base);
+    smokePuffs.push(puff);
+    group.add(puff);
+  }
+
+  return {
+    building,
+    group,
+    fireModels,
+    smokePuffs,
+    truckDispatched: false,
+  };
+}
+
+function getBuildingRoofInfo(building) {
+  const box = new THREE.Box3().setFromObject(building);
+  const size = box.getSize(new THREE.Vector3());
+
+  return {
+    y: box.max.y - building.position.y + 0.08,
+    halfX: THREE.MathUtils.clamp(size.x * 0.24, 0.28, 1.25),
+    halfZ: THREE.MathUtils.clamp(size.z * 0.24, 0.28, 1.25),
+  };
+}
+
+function createFallbackFireModel() {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({
+    color: '#ff7a2f',
+    emissive: '#ff5a24',
+    emissiveIntensity: 1.5,
+    roughness: 0.55,
+  });
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.58, 8), material);
+  const light = new THREE.PointLight('#ff7a2f', 1.1, 3);
+
+  flame.position.y = 0.29;
+  light.position.y = 0.45;
+  group.add(flame, light);
+  return group;
+}
+
+function animateBuildingFire(incident, delta, now) {
+  const time = now / 1000;
+
+  incident.fireModels.forEach((fire) => {
+    const flicker = 1 + Math.sin(time * 9 + fire.userData.flickerPhase) * 0.055;
+    fire.scale.copy(fire.userData.baseScale).multiplyScalar(flicker);
+  });
+
+  incident.smokePuffs.forEach((puff) => {
+    const data = puff.userData;
+    data.life += delta / data.duration;
+
+    if (data.life > 1) {
+      data.life -= 1;
+      data.base.x += randomFloat(-0.04, 0.04);
+      data.base.z += randomFloat(-0.04, 0.04);
+      data.drift.set(randomFloat(-0.35, 0.35), 0, randomFloat(-0.35, 0.35));
+    }
+
+    const t = data.life;
+    puff.position.copy(data.base)
+      .add(data.drift.clone().multiplyScalar(t))
+      .add(new THREE.Vector3(0, data.rise * t, 0));
+    puff.scale.setScalar(data.baseSize * THREE.MathUtils.lerp(0.65, 1.75, t));
+    puff.material.opacity = Math.sin(t * Math.PI) * 0.24;
+  });
+}
+
+function disposeObject3D(object) {
+  object.traverse((child) => {
+    if (Array.isArray(child.material)) {
+      child.material.forEach((material) => material.dispose?.());
+    } else if (child.material) {
+      child.material.dispose?.();
+    }
+  });
 }
 
 function slugify(value) {
@@ -1091,6 +1450,10 @@ function areOpposite(first, second) {
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function randomFloat(min, max) {
+  return min + Math.random() * (max - min);
 }
 
 function randomInt(min, max) {

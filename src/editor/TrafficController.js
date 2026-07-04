@@ -15,6 +15,10 @@ const POLICE_DETAIN_DISTANCE = 1.35;
 const POLICE_DESPAWN_AFTER_IDLE = 2.5;
 const POLICE_EXIT_DISTANCE = ROAD_CELL_SIZE * 1.8;
 const POLICE_LIGHT_BLINKS_PER_SECOND = 5.5;
+const FIRE_EXTINGUISH_DISTANCE = 2.6;
+const FIRE_SERVICE_DURATION = 3.2;
+const FIRE_TRUCK_DESPAWN_AFTER_IDLE = 3.5;
+const FIRE_TRUCK_LIGHT_BLINKS_PER_SECOND = 4.8;
 
 const DIRECTIONS = {
   n: { id: 'n', dx: 0, dz: -1 },
@@ -31,9 +35,11 @@ export class TrafficController {
     this.sceneManager = sceneManager;
     this.carAssets = [];
     this.policeAsset = null;
+    this.fireTruckAsset = null;
     this.roadMap = new Map();
     this.cars = [];
     this.policeDispatches = [];
+    this.fireDispatches = [];
     this.spawnTimer = 0;
     this.density = DEFAULT_TRAFFIC_DENSITY;
     this.needsRoadSync = true;
@@ -45,7 +51,12 @@ export class TrafficController {
 
   setAssets(assets) {
     this.policeAsset = assets.find((asset) => asset.kind === 'car' && asset.id === 'police-car') ?? null;
-    this.carAssets = assets.filter((asset) => asset.kind === 'car' && asset !== this.policeAsset);
+    this.fireTruckAsset = assets.find((asset) => asset.kind === 'car' && asset.id === 'fire-truck') ?? null;
+    this.carAssets = assets.filter((asset) => (
+      asset.kind === 'car' &&
+      asset !== this.policeAsset &&
+      asset !== this.fireTruckAsset
+    ));
     this.reset();
   }
 
@@ -62,8 +73,10 @@ export class TrafficController {
   reset() {
     this.cars.forEach((car) => this.sceneManager.remove(car.object));
     this.policeDispatches.forEach((dispatch) => this.sceneManager.remove(dispatch.object));
+    this.fireDispatches.forEach((dispatch) => this.sceneManager.remove(dispatch.object));
     this.cars = [];
     this.policeDispatches = [];
+    this.fireDispatches = [];
     this.spawnTimer = 0;
   }
 
@@ -104,6 +117,15 @@ export class TrafficController {
 
       if (!this.advancePoliceDispatch(dispatch, delta)) {
         this.removePoliceDispatch(index);
+      }
+    }
+
+    for (let index = this.fireDispatches.length - 1; index >= 0; index -= 1) {
+      const dispatch = this.fireDispatches[index];
+      updateFireTruckLights(dispatch, now);
+
+      if (!this.advanceFireDispatch(dispatch, delta)) {
+        this.removeFireDispatch(index);
       }
     }
   }
@@ -205,6 +227,59 @@ export class TrafficController {
     return true;
   }
 
+  dispatchFireTruckToBuilding(building, callbacks = {}) {
+    if (!building || !this.fireTruckAsset) {
+      callbacks.onUnavailable?.('No fire truck available.');
+      return false;
+    }
+
+    if (this.fireDispatches.some((dispatch) => dispatch.building === building)) {
+      return false;
+    }
+
+    const spawnOptions = this.getFireSpawnOptions(building);
+
+    if (spawnOptions.length === 0) {
+      callbacks.onUnavailable?.('No reachable road for the fire truck.');
+      return false;
+    }
+
+    const spawn = randomItem(spawnOptions.slice(0, Math.min(spawnOptions.length, 5)));
+    const asset = this.fireTruckAsset;
+    const object = makePlaceableClone(asset.source, asset);
+    const nextCell = getNeighborCell(spawn.cell, spawn.direction);
+    const from = lanePoint(spawn.cell, spawn.direction);
+    const to = lanePoint(nextCell, spawn.direction);
+
+    object.userData.fireDispatch = true;
+    object.userData.fireTruckLights = createFireTruckLights(object);
+    object.position.copy(from);
+    object.rotation.y = getTravelRotation(from, to, asset);
+    this.sceneManager.add(object);
+
+    this.fireDispatches.push({
+      object,
+      asset,
+      building,
+      callbacks,
+      phase: 'enroute',
+      destinationKey: spawn.destinationKey,
+      routeMap: spawn.routeMap,
+      cell: spawn.cell,
+      nextCell,
+      direction: spawn.direction,
+      from,
+      to,
+      progress: 0,
+      speed: 2.25,
+      idleTime: 0,
+      serviceTime: 0,
+      extinguished: false,
+    });
+    callbacks.onStatusChange?.('Fire truck en route.');
+    return true;
+  }
+
   getPoliceSpawnOptions(person) {
     const destination = getPersonCell(person);
 
@@ -229,6 +304,51 @@ export class TrafficController {
         const bAligned = b.routeDirection === b.direction ? 1 : 0;
         return bAligned - aAligned || b.distance - a.distance;
       });
+  }
+
+  getFireSpawnOptions(building) {
+    const destination = this.getNearestRoadCell(building.position);
+
+    if (!destination) {
+      return [];
+    }
+
+    const destinationKey = cellKey(destination);
+    const routeMap = this.buildRouteMap(destination);
+
+    return this.getSpawnOptions()
+      .map((spawn) => {
+        const route = routeMap.get(cellKey(spawn.cell));
+        return {
+          ...spawn,
+          routeDirection: route?.direction ?? null,
+          distance: route?.distance ?? Infinity,
+          destinationKey,
+          routeMap,
+        };
+      })
+      .filter((spawn) => spawn.routeDirection || cellKey(spawn.cell) === destinationKey)
+      .sort((a, b) => {
+        const aAligned = a.routeDirection === a.direction ? 1 : 0;
+        const bAligned = b.routeDirection === b.direction ? 1 : 0;
+        return bAligned - aAligned || b.distance - a.distance;
+      });
+  }
+
+  getNearestRoadCell(position) {
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    this.roadMap.forEach((road) => {
+      const distance = cellToPosition(road).distanceToSquared(position);
+
+      if (distance < nearestDistance) {
+        nearest = road;
+        nearestDistance = distance;
+      }
+    });
+
+    return nearest;
   }
 
   getSpawnOptions() {
@@ -381,6 +501,165 @@ export class TrafficController {
     return true;
   }
 
+  advanceFireDispatch(dispatch, delta) {
+    if (dispatch.phase === 'leaving') {
+      return this.advancePoliceLeaving(dispatch, delta);
+    }
+
+    if (dispatch.phase === 'servicing') {
+      dispatch.serviceTime -= delta;
+
+      if (dispatch.serviceTime <= 0 && !dispatch.extinguished) {
+        dispatch.extinguished = true;
+        dispatch.callbacks.onExtinguished?.(dispatch.building);
+        this.beginFireExit(dispatch);
+      }
+
+      return true;
+    }
+
+    if (dispatch.phase === 'enroute' && !dispatch.building?.parent) {
+      dispatch.callbacks.onUnavailable?.('The burning building is gone.');
+      return false;
+    }
+
+    if (
+      dispatch.phase === 'enroute' &&
+      dispatch.object.position.distanceTo(dispatch.building.position) <= FIRE_EXTINGUISH_DISTANCE
+    ) {
+      this.beginFireService(dispatch);
+      return true;
+    }
+
+    let remainingTravel = dispatch.speed * delta;
+
+    while (remainingTravel > 0) {
+      let currentRoad = this.roadMap.get(cellKey(dispatch.cell));
+      let nextRoad = this.roadMap.get(cellKey(dispatch.nextCell));
+
+      if (!currentRoad) {
+        return this.keepFireTruckIdling(dispatch, delta);
+      }
+
+      if (dispatch.phase === 'enroute' && cellKey(currentRoad) === dispatch.destinationKey) {
+        this.beginFireService(dispatch);
+        return true;
+      }
+
+      if (dispatch.phase === 'exit' && cellKey(currentRoad) === dispatch.exitDestinationKey) {
+        this.beginPoliceLeaving(dispatch, currentRoad);
+        return true;
+      }
+
+      if (!nextRoad || !canTravel(currentRoad, nextRoad, dispatch.direction)) {
+        const rerouteDirection = dispatch.phase === 'exit'
+          ? this.choosePoliceExitDirection(currentRoad, dispatch.direction, dispatch)
+          : this.chooseFireDirection(currentRoad, dispatch.direction, dispatch);
+
+        if (!rerouteDirection) {
+          return this.keepFireTruckIdling(dispatch, delta);
+        }
+
+        dispatch.direction = rerouteDirection;
+        dispatch.nextCell = getNeighborCell(currentRoad, dispatch.direction);
+        dispatch.from = dispatch.object.position.clone();
+        dispatch.to = lanePoint(dispatch.nextCell, dispatch.direction);
+        dispatch.progress = 0;
+        nextRoad = this.roadMap.get(cellKey(dispatch.nextCell));
+      }
+
+      const segmentLength = Math.max(dispatch.from.distanceTo(dispatch.to), 0.001);
+      const segmentRemaining = (1 - dispatch.progress) * segmentLength;
+
+      if (remainingTravel < segmentRemaining) {
+        dispatch.progress += remainingTravel / segmentLength;
+        remainingTravel = 0;
+        break;
+      }
+
+      remainingTravel -= segmentRemaining;
+
+      if (!nextRoad) {
+        return this.keepFireTruckIdling(dispatch, delta);
+      }
+
+      dispatch.cell = nextRoad;
+      currentRoad = nextRoad;
+
+      if (dispatch.phase === 'enroute' && cellKey(currentRoad) === dispatch.destinationKey) {
+        dispatch.object.position.copy(dispatch.to);
+        this.beginFireService(dispatch);
+        return true;
+      }
+
+      const nextDirection = dispatch.phase === 'exit'
+        ? this.choosePoliceExitDirection(currentRoad, dispatch.direction, dispatch)
+        : this.chooseFireDirection(currentRoad, dispatch.direction, dispatch);
+
+      if (!nextDirection) {
+        return false;
+      }
+
+      dispatch.direction = nextDirection;
+      dispatch.nextCell = getNeighborCell(currentRoad, dispatch.direction);
+      dispatch.from = dispatch.to.clone();
+      dispatch.to = lanePoint(dispatch.nextCell, dispatch.direction);
+      dispatch.progress = 0;
+    }
+
+    dispatch.object.position.lerpVectors(dispatch.from, dispatch.to, THREE.MathUtils.clamp(dispatch.progress, 0, 1));
+    dispatch.object.rotation.y = getTravelRotation(dispatch.from, dispatch.to, dispatch.asset);
+    dispatch.idleTime = 0;
+    return true;
+  }
+
+  beginFireService(dispatch) {
+    dispatch.phase = 'servicing';
+    dispatch.serviceTime = FIRE_SERVICE_DURATION;
+    dispatch.progress = 0;
+    dispatch.idleTime = 0;
+    dispatch.callbacks.onStatusChange?.('Fire truck on scene.');
+  }
+
+  beginFireExit(dispatch) {
+    const currentRoad = this.roadMap.get(cellKey(dispatch.cell));
+    const exitPlan = currentRoad ? this.getPoliceExitPlan(currentRoad) : null;
+
+    dispatch.phase = 'exit';
+    dispatch.building = null;
+    dispatch.speed = 2.7;
+    dispatch.idleTime = 0;
+    dispatch.exitDestinationKey = exitPlan ? cellKey(exitPlan.road) : null;
+    dispatch.exitRouteMap = exitPlan?.routeMap ?? new Map();
+    dispatch.callbacks.onStatusChange?.('Fire out. Fire truck returning.');
+
+    if (currentRoad && dispatch.exitDestinationKey === cellKey(currentRoad)) {
+      this.beginPoliceLeaving(dispatch, currentRoad);
+      return;
+    }
+
+    const exitDirection = currentRoad ? this.choosePoliceExitDirection(currentRoad, dispatch.direction, dispatch) : null;
+
+    if (currentRoad && exitDirection) {
+      dispatch.direction = exitDirection;
+      dispatch.nextCell = getNeighborCell(currentRoad, dispatch.direction);
+      dispatch.from = dispatch.object.position.clone();
+      dispatch.to = lanePoint(dispatch.nextCell, dispatch.direction);
+      dispatch.progress = 0;
+    }
+  }
+
+  keepFireTruckIdling(dispatch, delta) {
+    dispatch.idleTime += delta;
+
+    if (dispatch.idleTime >= FIRE_TRUCK_DESPAWN_AFTER_IDLE) {
+      dispatch.callbacks.onUnavailable?.('Fire truck could not reach the building.');
+      return false;
+    }
+
+    return true;
+  }
+
   beginPoliceExit(dispatch) {
     const currentRoad = this.roadMap.get(cellKey(dispatch.cell));
     const exitPlan = currentRoad ? this.getPoliceExitPlan(currentRoad) : null;
@@ -455,6 +734,23 @@ export class TrafficController {
 
     if (routeDirection) {
       return routeDirection;
+    }
+
+    const connections = this.getConnections(road);
+    const choices = connections.filter((direction) => direction !== OPPOSITE[currentDirection]);
+
+    if (choices.length > 0) {
+      return randomItem(choices);
+    }
+
+    return connections[0] ?? null;
+  }
+
+  chooseFireDirection(road, currentDirection, dispatch) {
+    const plannedDirection = dispatch.routeMap?.get(cellKey(road))?.direction;
+
+    if (plannedDirection) {
+      return plannedDirection;
     }
 
     const connections = this.getConnections(road);
@@ -653,6 +949,11 @@ export class TrafficController {
     this.sceneManager.remove(dispatch.object);
   }
 
+  removeFireDispatch(index) {
+    const [dispatch] = this.fireDispatches.splice(index, 1);
+    this.sceneManager.remove(dispatch.object);
+  }
+
   trimTrafficToDensity() {
     const maxCars = this.getMaxCars();
 
@@ -682,6 +983,22 @@ function positionToCell(position) {
 }
 
 function createPoliceLights(object) {
+  return createEmergencyLights(object, {
+    name: 'Police Light Bar',
+    primaryColor: '#ff3148',
+    secondaryColor: '#2b72ff',
+  });
+}
+
+function createFireTruckLights(object) {
+  return createEmergencyLights(object, {
+    name: 'Fire Truck Light Bar',
+    primaryColor: '#ff3148',
+    secondaryColor: '#ffd15c',
+  });
+}
+
+function createEmergencyLights(object, options) {
   object.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
@@ -691,24 +1008,24 @@ function createPoliceLights(object) {
   const lightHeight = THREE.MathUtils.clamp(size.y * 0.08, 0.04, 0.08);
   const lightDepth = THREE.MathUtils.clamp(size.z * 0.16, 0.08, 0.18);
   const redMaterial = new THREE.MeshStandardMaterial({
-    color: '#ff3148',
-    emissive: '#ff3148',
+    color: options.primaryColor,
+    emissive: options.primaryColor,
     emissiveIntensity: 2.4,
     roughness: 0.34,
   });
   const blueMaterial = new THREE.MeshStandardMaterial({
-    color: '#2b72ff',
-    emissive: '#2b72ff',
+    color: options.secondaryColor,
+    emissive: options.secondaryColor,
     emissiveIntensity: 0.2,
     roughness: 0.34,
   });
   const geometry = new THREE.BoxGeometry(lightWidth, lightHeight, lightDepth);
   const redMesh = new THREE.Mesh(geometry, redMaterial);
   const blueMesh = new THREE.Mesh(geometry.clone(), blueMaterial);
-  const redLight = new THREE.PointLight('#ff3148', 1.6, 3.8);
-  const blueLight = new THREE.PointLight('#2b72ff', 0.1, 3.8);
+  const redLight = new THREE.PointLight(options.primaryColor, 1.6, 3.8);
+  const blueLight = new THREE.PointLight(options.secondaryColor, 0.1, 3.8);
 
-  bar.name = 'Police Light Bar';
+  bar.name = options.name;
   bar.position.set(center.x, box.max.y + lightHeight * 0.65, center.z);
   redMesh.position.x = -lightWidth * 0.62;
   blueMesh.position.x = lightWidth * 0.62;
@@ -739,6 +1056,20 @@ function updatePoliceLights(dispatch, now) {
   lights.blueMaterial.emissiveIntensity = pulse ? 0.18 : 3.4;
   lights.redLight.intensity = pulse ? 2.2 : 0.12;
   lights.blueLight.intensity = pulse ? 0.12 : 2.2;
+}
+
+function updateFireTruckLights(dispatch, now) {
+  const lights = dispatch.object.userData.fireTruckLights;
+
+  if (!lights) {
+    return;
+  }
+
+  const pulse = Math.sin((now / 1000) * FIRE_TRUCK_LIGHT_BLINKS_PER_SECOND * Math.PI * 2 + lights.phaseOffset) > 0;
+  lights.redMaterial.emissiveIntensity = pulse ? 3.8 : 0.2;
+  lights.blueMaterial.emissiveIntensity = pulse ? 0.2 : 2.9;
+  lights.redLight.intensity = pulse ? 2.4 : 0.1;
+  lights.blueLight.intensity = pulse ? 0.1 : 1.8;
 }
 
 function cellToPosition(cell) {
@@ -815,7 +1146,13 @@ function cellDistanceFromCenter(cell) {
 
 function getTravelRotation(from, to, asset) {
   const delta = new THREE.Vector3().subVectors(to, from);
-  const forwardCorrection = asset.trafficForwardAxis === '-z' ? Math.PI : 0;
+  const forwardCorrections = {
+    z: 0,
+    '-z': Math.PI,
+    x: -Math.PI / 2,
+    '-x': Math.PI / 2,
+  };
+  const forwardCorrection = forwardCorrections[asset.trafficForwardAxis] ?? 0;
   return Math.atan2(delta.x, delta.z) + forwardCorrection;
 }
 

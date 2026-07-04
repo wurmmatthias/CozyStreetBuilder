@@ -15,9 +15,9 @@ app.innerHTML = `
           <header class="window-titlebar" data-drag-handle>
             <div>
               <p class="eyebrow">Cozy Street Builder</p>
-              <h1>Town Console</h1>
+              <h1>Town Kit</h1>
             </div>
-            <button class="window-close" type="button" data-window-close="command" title="Close command window" aria-label="Close command window">x</button>
+            <button class="window-close" type="button" data-window-close="command" title="Close command window" aria-label="Close command window">X</button>
           </header>
 
           <div class="window-body">
@@ -27,7 +27,7 @@ app.innerHTML = `
               <button id="view-mode" type="button">View</button>
             </div>
 
-            <p class="mode-readout" id="mode-label">Pick an asset, then click the grid.</p>
+            <p class="mode-readout" id="mode-label">Build mode is ready.</p>
 
             <section class="panel-section">
               <div class="section-heading">
@@ -46,12 +46,12 @@ app.innerHTML = `
         <section class="game-window asset-window build-only" data-window="assets" aria-label="Asset window">
           <header class="window-titlebar" data-drag-handle>
             <div>
-              <p class="eyebrow">Build Skill</p>
-              <h2>Asset Deck</h2>
+              <p class="eyebrow">Build Shelf</p>
+              <h2>Pieces</h2>
             </div>
             <div class="window-actions">
               <button class="icon-button" id="reload-assets" type="button" title="Reload assets" aria-label="Reload assets">R</button>
-              <button class="window-close" type="button" data-window-close="assets" title="Close asset window" aria-label="Close asset window">x</button>
+              <button class="window-close" type="button" data-window-close="assets" title="Close asset window" aria-label="Close asset window">X</button>
             </div>
           </header>
 
@@ -63,10 +63,10 @@ app.innerHTML = `
         <section class="game-window placement-window build-only" data-window="placement" aria-label="Placement window">
           <header class="window-titlebar" data-drag-handle>
             <div>
-              <p class="eyebrow">Edit Skill</p>
+              <p class="eyebrow">Arrange</p>
               <h2>Placement</h2>
             </div>
-            <button class="window-close" type="button" data-window-close="placement" title="Close placement window" aria-label="Close placement window">x</button>
+            <button class="window-close" type="button" data-window-close="placement" title="Close placement window" aria-label="Close placement window">X</button>
           </header>
 
           <div class="window-body">
@@ -107,10 +107,10 @@ app.innerHTML = `
         <section class="game-window generate-window generate-only" data-window="generate" aria-label="Generate window">
           <header class="window-titlebar" data-drag-handle>
             <div>
-              <p class="eyebrow">World Skill</p>
+              <p class="eyebrow">World Bake</p>
               <h2>Town Generator</h2>
             </div>
-            <button class="window-close" type="button" data-window-close="generate" title="Close generator window" aria-label="Close generator window">x</button>
+            <button class="window-close" type="button" data-window-close="generate" title="Close generator window" aria-label="Close generator window">X</button>
           </header>
 
           <div class="window-body">
@@ -136,7 +136,7 @@ app.innerHTML = `
                 <output id="generate-traffic-density-value">50%</output>
               </div>
               <div class="button-row action-row">
-                <button id="generate-town" class="primary-action" type="button">Generate</button>
+                <button id="generate-town" class="primary-action" type="button">Make Town</button>
                 <button id="clear-town" type="button">Clear</button>
               </div>
             </section>

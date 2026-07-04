@@ -11,6 +11,7 @@ const DIRECTIONS = [
   { id: 's', dx: 0, dz: 1 },
   { id: 'w', dx: -1, dz: 0 },
 ];
+const ROTATE_DRAG_SENSITIVITY = 0.015;
 
 export class PlacementController {
   constructor(sceneManager, elements) {
@@ -32,6 +33,7 @@ export class PlacementController {
     this.activeAsset = null;
     this.ghost = null;
     this.selected = null;
+    this.rotationDrag = null;
     this.mode = 'build';
     this.lastSnap = new THREE.Vector3();
     this.traffic = new TrafficController(this.sceneManager);
@@ -43,16 +45,19 @@ export class PlacementController {
       trafficDensity: 0.5,
     };
 
-    const canvas = this.sceneManager.renderer.domElement;
-    canvas.addEventListener('pointermove', (event) => this.onPointerMove(event));
-    canvas.addEventListener('pointerdown', (event) => this.onPointerDown(event));
+    this.canvas = this.sceneManager.renderer.domElement;
+    this.canvas.addEventListener('pointermove', (event) => this.onPointerMove(event));
+    this.canvas.addEventListener('pointerdown', (event) => this.onPointerDown(event), true);
+    this.canvas.addEventListener('pointerup', (event) => this.onPointerUp(event));
+    this.canvas.addEventListener('pointercancel', (event) => this.onPointerUp(event));
+    this.canvas.addEventListener('pointerleave', () => this.updateCanvasCursor(null));
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
   }
 
   async loadAssets(packs) {
     this.clearGhost();
     this.assets = [];
-    this.elements.assetGrid.innerHTML = '<p class="loading-note">Loading assets...</p>';
+    this.elements.assetGrid.innerHTML = '<p class="loading-note">Loading town pieces...</p>';
 
     const loadedPacks = await Promise.all(packs.map((pack) => this.loadPack(pack)));
     this.assets = loadedPacks.flat();
@@ -71,18 +76,20 @@ export class PlacementController {
   setMode(mode) {
     this.mode = mode;
     this.sceneManager.setBuildMode(mode !== 'view');
+    this.stopRotationDrag();
+    this.updateCanvasCursor(null);
 
     if (mode === 'view') {
       this.clearGhost();
       this.select(null);
-      this.elements.modeLabel.textContent = 'View mode: WASD moves, arrow keys rotate, mouse orbits.';
+      this.elements.modeLabel.textContent = 'View mode is open.';
       return;
     }
 
     if (mode === 'generate') {
       this.clearGhost();
       this.select(null);
-      this.elements.modeLabel.textContent = 'Generate mode: create a random complete town.';
+      this.elements.modeLabel.textContent = 'Town generator is ready.';
       return;
     }
 
@@ -219,7 +226,7 @@ export class PlacementController {
       button.classList.toggle('is-active', button.dataset.assetId === assetId);
     });
 
-    this.elements.modeLabel.textContent = `${this.activeAsset.name}: click a grid square to place.`;
+    this.elements.modeLabel.textContent = `${this.activeAsset.name} selected.`;
   }
 
   setGridSize(size) {
@@ -250,6 +257,15 @@ export class PlacementController {
     }
 
     this.updatePointer(event);
+
+    if (this.rotationDrag) {
+      this.updateRotationDrag(event);
+      return;
+    }
+
+    const placed = this.getPlacedUnderPointer();
+    this.updateCanvasCursor(placed);
+
     const groundPoint = this.getGroundPoint();
 
     if (!groundPoint || !this.ghost) {
@@ -270,13 +286,30 @@ export class PlacementController {
     const placed = this.getPlacedUnderPointer();
 
     if (placed) {
+      if (placed === this.selected) {
+        this.startRotationDrag(event, placed);
+        return;
+      }
+
       this.select(placed);
+      this.updateCanvasCursor(placed);
       return;
     }
 
     if (this.activeAsset && this.ghost?.visible) {
       this.placeActive();
     }
+  }
+
+  onPointerUp(event) {
+    if (!this.rotationDrag || event.pointerId !== this.rotationDrag.pointerId) {
+      return;
+    }
+
+    this.stopRotationDrag();
+    this.updatePointer(event);
+    this.updateCanvasCursor(this.getPlacedUnderPointer());
+    event.preventDefault();
   }
 
   onKeyDown(event) {
@@ -337,6 +370,48 @@ export class PlacementController {
     target.rotation.y += step * direction;
     this.syncTrafficRoads();
     this.updateSelectionReadout();
+  }
+
+  startRotationDrag(event, target) {
+    this.rotationDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startRotation: target.rotation.y,
+      target,
+    };
+    this.sceneManager.controls.enabled = false;
+    this.canvas.dataset.cursor = 'rotate';
+    this.canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  updateRotationDrag(event) {
+    const drag = this.rotationDrag;
+
+    if (!drag?.target) {
+      return;
+    }
+
+    const deltaX = event.clientX - drag.startX;
+    drag.target.rotation.y = drag.startRotation + deltaX * ROTATE_DRAG_SENSITIVITY;
+    this.syncTrafficRoads();
+    this.updateSelectionReadout();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  stopRotationDrag() {
+    if (!this.rotationDrag) {
+      return;
+    }
+
+    if (this.canvas.hasPointerCapture?.(this.rotationDrag.pointerId)) {
+      this.canvas.releasePointerCapture(this.rotationDrag.pointerId);
+    }
+
+    this.rotationDrag = null;
+    this.sceneManager.controls.enabled = true;
   }
 
   duplicateSelected() {
@@ -446,7 +521,7 @@ export class PlacementController {
       this.elements.generateStatus.textContent = `${roadCount} roads, ${buildingCount} buildings, ${foliageCount} trees`;
     }
 
-    this.elements.modeLabel.textContent = 'Generated town: press Generate Town again to reshuffle.';
+    this.elements.modeLabel.textContent = 'Fresh town generated.';
     this.syncTrafficRoads();
   }
 
@@ -486,6 +561,7 @@ export class PlacementController {
     }
 
     this.updateSelectionReadout();
+    this.updateCanvasCursor(null);
   }
 
   updateSelectionReadout() {
@@ -518,6 +594,15 @@ export class PlacementController {
     const hits = this.raycaster.intersectObjects(this.placed, true);
     const hit = hits.find((item) => item.object.parent);
     return hit ? findEditorRoot(hit.object) : null;
+  }
+
+  updateCanvasCursor(placed) {
+    if (this.rotationDrag || placed && placed === this.selected) {
+      this.canvas.dataset.cursor = 'rotate';
+      return;
+    }
+
+    delete this.canvas.dataset.cursor;
   }
 
   clearGhost() {

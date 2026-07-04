@@ -14,7 +14,7 @@ export class SceneManager {
   constructor(container) {
     this.container = container;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#87ceeb');
+    this.scene.background = new THREE.Color('#8fd0ee');
     this.lastFrameTime = performance.now();
     this.gridVisible = true;
     this.pressedKeys = new Set();
@@ -54,7 +54,7 @@ export class SceneManager {
   createGround() {
     const geometry = new THREE.PlaneGeometry(160, 160);
     const material = new THREE.MeshStandardMaterial({
-      color: '#62a84d',
+      color: '#74b85b',
       roughness: 0.92,
       metalness: 0,
     });
@@ -66,7 +66,7 @@ export class SceneManager {
   }
 
   createGrid() {
-    const grid = new THREE.GridHelper(160, 80, '#4a5f54', '#8aa092');
+    const grid = new THREE.GridHelper(160, 80, '#4f754f', '#8fb684');
     grid.name = 'Snap Grid';
     grid.material.transparent = true;
     grid.material.opacity = 0.5;
@@ -78,7 +78,7 @@ export class SceneManager {
     this.scene.remove(this.grid);
     this.grid.geometry.dispose();
     this.grid.material.dispose();
-    this.grid = new THREE.GridHelper(160, divisions, '#4a5f54', '#8aa092');
+    this.grid = new THREE.GridHelper(160, divisions, '#4f754f', '#8fb684');
     this.grid.material.transparent = true;
     this.grid.material.opacity = 0.5;
     this.grid.visible = this.gridVisible;
@@ -91,10 +91,10 @@ export class SceneManager {
   }
 
   addLighting() {
-    const hemi = new THREE.HemisphereLight('#f7f6ec', '#6f806f', 2.2);
+    const hemi = new THREE.HemisphereLight('#f8f4df', '#6f8f68', 2.25);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight('#fff4d8', 3.4);
+    const sun = new THREE.DirectionalLight('#fff2d5', 3.35);
     sun.position.set(14, 24, 10);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);

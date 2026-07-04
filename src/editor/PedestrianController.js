@@ -11,6 +11,68 @@ const PEDESTRIAN_Y_OFFSET = 0.03;
 const DESPAWN_AFTER_IDLE = 0.35;
 const MAX_SPAWNS_PER_FRAME = 8;
 
+const FIRST_NAMES = [
+  'Ada',
+  'Milo',
+  'Nina',
+  'Theo',
+  'June',
+  'Otto',
+  'Lena',
+  'Iris',
+  'Felix',
+  'Mara',
+  'Noah',
+  'Sofia',
+  'Ravi',
+  'Clara',
+  'Emil',
+  'Tara',
+];
+const LAST_NAMES = [
+  'Baker',
+  'Stone',
+  'Rivera',
+  'Moss',
+  'Chen',
+  'Keller',
+  'Reed',
+  'Park',
+  'Hayes',
+  'Winter',
+  'Singh',
+  'Bloom',
+  'Fischer',
+  'Lane',
+  'Voss',
+  'Hart',
+];
+const OCCUPATIONS = [
+  'Florist',
+  'Baker',
+  'Bike Courier',
+  'Teacher',
+  'Architect',
+  'Cafe Owner',
+  'Paramedic',
+  'Librarian',
+  'Street Musician',
+  'Gardener',
+  'Software Tester',
+  'Bus Driver',
+  'Tailor',
+  'Bookbinder',
+  'Market Vendor',
+  'Urban Planner',
+];
+const MOOD_METERS = [
+  '😟',
+  '😐 😐',
+  '🙂 🙂 🙂',
+  '😄 😄 😄 😄',
+  '🤩 🤩 🤩 🤩 🤩',
+];
+
 const DIRECTIONS = {
   n: { id: 'n', dx: 0, dz: -1 },
   e: { id: 'e', dx: 1, dz: 0 },
@@ -30,6 +92,7 @@ export class PedestrianController {
     this.density = DEFAULT_PEDESTRIAN_DENSITY;
     this.needsRoadSync = true;
     this.placed = [];
+    this.nextPersonId = 1;
 
     this.update = this.update.bind(this);
     this.sceneManager.addUpdater(this.update);
@@ -53,6 +116,7 @@ export class PedestrianController {
   reset() {
     this.people.forEach((person) => this.sceneManager.remove(person.object));
     this.people = [];
+    this.nextPersonId = 1;
   }
 
   update(delta) {
@@ -117,15 +181,23 @@ export class PedestrianController {
     const to = sidewalkPoint(nextCell, spawn.direction, spawn.side);
     const progress = Math.random();
     const mixer = createWalkMixer(object, asset);
+    const identity = createResidentIdentity(this.nextPersonId);
 
     object.userData.pedestrian = true;
+    object.userData.pedestrianId = this.nextPersonId;
+    object.userData.residentName = identity.name;
+    object.userData.residentOccupation = identity.occupation;
+    object.userData.residentAge = identity.age;
+    object.userData.residentMood = identity.moodMeter;
     object.position.lerpVectors(from, to, progress);
     object.rotation.y = getTravelRotation(from, to, asset);
     this.sceneManager.add(object);
 
     this.people.push({
+      id: this.nextPersonId,
       object,
       asset,
+      identity,
       mixer,
       cell: spawn.cell,
       nextCell,
@@ -137,6 +209,7 @@ export class PedestrianController {
       speed: 0.38 + Math.random() * 0.24,
       idleTime: 0,
     });
+    this.nextPersonId += 1;
 
     return true;
   }
@@ -223,6 +296,19 @@ export class PedestrianController {
   removePerson(index) {
     const [person] = this.people.splice(index, 1);
     this.sceneManager.remove(person.object);
+  }
+
+  getPickableObjects() {
+    return this.people.map((person) => person.object);
+  }
+
+  getPersonFromObject(object) {
+    const root = findPedestrianRoot(object);
+    return root ? this.people.find((person) => person.object === root) ?? null : null;
+  }
+
+  hasPerson(person) {
+    return this.people.includes(person);
   }
 
   trimPeopleToDensity() {
@@ -332,4 +418,28 @@ function mod(value, divisor) {
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function createResidentIdentity(id) {
+  return {
+    id,
+    name: `${randomItem(FIRST_NAMES)} ${randomItem(LAST_NAMES)}`,
+    occupation: randomItem(OCCUPATIONS),
+    age: randomInt(18, 65),
+    moodMeter: randomItem(MOOD_METERS),
+  };
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function findPedestrianRoot(object) {
+  let current = object;
+
+  while (current.parent && !current.userData.pedestrian) {
+    current = current.parent;
+  }
+
+  return current.userData.pedestrian ? current : null;
 }

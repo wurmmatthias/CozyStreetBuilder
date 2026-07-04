@@ -20,6 +20,7 @@ export class SceneManager {
     this.pressedKeys = new Set();
     this.updaters = new Set();
     this.clouds = [];
+    this.followCameraFeeds = new Set();
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -197,6 +198,62 @@ export class SceneManager {
     this.updaters.delete(updater);
   }
 
+  createFollowCameraFeed(container) {
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor('#bfe8ff', 1);
+    renderer.shadowMap.enabled = false;
+    container.append(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 80);
+    const feed = {
+      container,
+      renderer,
+      camera,
+      target: null,
+      smoothPosition: new THREE.Vector3(),
+      smoothLookAt: new THREE.Vector3(),
+      initialized: false,
+      resizeObserver: new ResizeObserver(() => this.resizeFollowCameraFeed(feed)),
+      setTarget: (target) => {
+        feed.target = target;
+        feed.initialized = false;
+      },
+      dispose: () => {
+        feed.resizeObserver.disconnect();
+        this.followCameraFeeds.delete(feed);
+        renderer.dispose();
+        renderer.domElement.remove();
+      },
+    };
+
+    feed.resizeObserver.observe(container);
+    this.followCameraFeeds.add(feed);
+    this.resizeFollowCameraFeed(feed);
+    return feed;
+  }
+
+  resizeFollowCameraFeed(feed) {
+    const { clientWidth, clientHeight } = feed.container;
+    const width = Math.max(clientWidth, 1);
+    const height = Math.max(clientHeight, 1);
+    feed.camera.aspect = width / height;
+    feed.camera.updateProjectionMatrix();
+    feed.renderer.setSize(width, height, false);
+  }
+
+  renderFollowCameraFeeds(delta) {
+    this.followCameraFeeds.forEach((feed) => {
+      if (!feed.target || feed.container.offsetParent === null) {
+        return;
+      }
+
+      this.resizeFollowCameraFeed(feed);
+      updateFollowCamera(feed, delta);
+      feed.renderer.render(this.scene, feed.camera);
+    });
+  }
+
   resize() {
     const { clientWidth, clientHeight } = this.container;
     this.camera.aspect = clientWidth / Math.max(clientHeight, 1);
@@ -273,6 +330,7 @@ export class SceneManager {
       this.updaters.forEach((updater) => updater(delta, now));
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
+      this.renderFollowCameraFeeds(delta);
       requestAnimationFrame(render);
     };
 
@@ -324,6 +382,34 @@ function normalizeCloudModel(model, targetWidth) {
   const scaledBox = new THREE.Box3().setFromObject(model);
   const center = scaledBox.getCenter(new THREE.Vector3());
   model.position.sub(center);
+}
+
+function updateFollowCamera(feed, delta) {
+  const box = new THREE.Box3().setFromObject(feed.target);
+  const size = box.getSize(new THREE.Vector3());
+  const face = box.getCenter(new THREE.Vector3());
+  face.y = box.min.y + size.y * 0.76;
+
+  const forward = new THREE.Vector3(Math.sin(feed.target.rotation.y), 0, Math.cos(feed.target.rotation.y));
+  const distance = THREE.MathUtils.clamp(size.y * 0.95 + 0.35, 0.85, 2.1);
+  const cameraPosition = face
+    .clone()
+    .add(forward.multiplyScalar(distance))
+    .add(new THREE.Vector3(0, size.y * 0.08, 0));
+  const lookAt = face.clone().add(new THREE.Vector3(0, size.y * 0.02, 0));
+
+  if (!feed.initialized) {
+    feed.smoothPosition.copy(cameraPosition);
+    feed.smoothLookAt.copy(lookAt);
+    feed.initialized = true;
+  } else {
+    const followAmount = 1 - Math.pow(0.001, delta);
+    feed.smoothPosition.lerp(cameraPosition, followAmount);
+    feed.smoothLookAt.lerp(lookAt, followAmount);
+  }
+
+  feed.camera.position.copy(feed.smoothPosition);
+  feed.camera.lookAt(feed.smoothLookAt);
 }
 
 function randomFloat(min, max) {

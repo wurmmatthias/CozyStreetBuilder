@@ -33,6 +33,10 @@ export class PlacementController {
     this.activeAsset = null;
     this.ghost = null;
     this.selected = null;
+    this.selectedResident = null;
+    this.residentCamera = elements.residentViewport
+      ? this.sceneManager.createFollowCameraFeed(elements.residentViewport)
+      : null;
     this.rotationDrag = null;
     this.mode = 'build';
     this.lastSnap = new THREE.Vector3();
@@ -52,6 +56,7 @@ export class PlacementController {
     this.canvas.addEventListener('pointercancel', (event) => this.onPointerUp(event));
     this.canvas.addEventListener('pointerleave', () => this.updateCanvasCursor(null));
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
+    this.sceneManager.addUpdater(() => this.updateSelectedResident());
   }
 
   async loadAssets(packs) {
@@ -82,7 +87,7 @@ export class PlacementController {
     if (mode === 'view') {
       this.clearGhost();
       this.select(null);
-      this.elements.modeLabel.textContent = 'View mode is open.';
+      this.elements.modeLabel.textContent = 'View mode is open. Click an inhabitant to follow them.';
       return;
     }
 
@@ -278,6 +283,19 @@ export class PlacementController {
   }
 
   onPointerDown(event) {
+    if (this.mode === 'view' && event.button === 0) {
+      this.updatePointer(event);
+      const resident = this.getResidentUnderPointer();
+
+      if (resident) {
+        this.selectResident(resident);
+        event.preventDefault();
+        event.stopPropagation();
+      }
+
+      return;
+    }
+
     if (this.mode !== 'build' || event.button !== 0) {
       return;
     }
@@ -313,6 +331,12 @@ export class PlacementController {
   }
 
   onKeyDown(event) {
+    if (this.mode === 'view' && event.key === 'Escape') {
+      this.selectResident(null);
+      event.preventDefault();
+      return;
+    }
+
     if (this.mode !== 'build' || isTypingTarget(event.target)) {
       return;
     }
@@ -437,6 +461,7 @@ export class PlacementController {
 
   clearTown() {
     this.select(null);
+    this.selectResident(null);
     this.clearGhost();
     this.placed.forEach((object) => this.sceneManager.remove(object));
     this.placed = [];
@@ -564,6 +589,60 @@ export class PlacementController {
     this.updateCanvasCursor(null);
   }
 
+  selectResident(person) {
+    if (this.selectedResident?.object) {
+      setSelectedTint(this.selectedResident.object, false);
+    }
+
+    this.selectedResident = person;
+    this.residentCamera?.setTarget(person?.object ?? null);
+
+    if (!person) {
+      if (this.elements.residentWindow) {
+        this.elements.residentWindow.hidden = true;
+      }
+
+      return;
+    }
+
+    setSelectedTint(person.object, true);
+
+    if (this.elements.residentWindow) {
+      this.elements.residentWindow.hidden = false;
+    }
+
+    if (this.elements.residentName) {
+      this.elements.residentName.textContent = person.identity.name;
+    }
+
+    if (this.elements.residentOccupation) {
+      this.elements.residentOccupation.textContent = person.identity.occupation;
+    }
+
+    if (this.elements.residentAge) {
+      this.elements.residentAge.textContent = person.identity.age.toString();
+    }
+
+    if (this.elements.residentMood) {
+      this.elements.residentMood.textContent = person.identity.moodMeter;
+    }
+
+    this.elements.modeLabel.textContent = `Following ${person.identity.name}.`;
+  }
+
+  hasSelectedResident() {
+    return Boolean(this.selectedResident);
+  }
+
+  updateSelectedResident() {
+    if (!this.selectedResident || this.pedestrians.hasPerson(this.selectedResident)) {
+      return;
+    }
+
+    this.selectResident(null);
+    this.elements.modeLabel.textContent = 'That inhabitant left the visible streets.';
+  }
+
   updateSelectionReadout() {
     if (!this.selected) {
       this.elements.selectedName.textContent = 'None';
@@ -594,6 +673,23 @@ export class PlacementController {
     const hits = this.raycaster.intersectObjects(this.placed, true);
     const hit = hits.find((item) => item.object.parent);
     return hit ? findEditorRoot(hit.object) : null;
+  }
+
+  getResidentUnderPointer() {
+    this.raycaster.setFromCamera(this.pointer, this.sceneManager.camera);
+    const hits = this.raycaster.intersectObjects(this.pedestrians.getPickableObjects(), true);
+    const hit = hits.find((item) => item.object.parent);
+
+    if (hit) {
+      return this.pedestrians.getPersonFromObject(hit.object);
+    }
+
+    return getNearestScreenResident(
+      this.pointer,
+      this.sceneManager.camera,
+      this.sceneManager.renderer.domElement,
+      this.pedestrians.people,
+    );
   }
 
   updateCanvasCursor(placed) {
@@ -648,6 +744,41 @@ function findEditorRoot(object) {
   }
 
   return current.userData.editorObject ? current : null;
+}
+
+function getNearestScreenResident(pointer, camera, canvas, people) {
+  const rect = canvas.getBoundingClientRect();
+  const pointerX = (pointer.x + 1) * rect.width * 0.5;
+  const pointerY = (-pointer.y + 1) * rect.height * 0.5;
+  let nearest = null;
+  let nearestDistance = Infinity;
+
+  people.forEach((person) => {
+    const screenPoint = person.object.position.clone();
+    screenPoint.y += getResidentPickHeight(person.object);
+    screenPoint.project(camera);
+
+    if (screenPoint.z < -1 || screenPoint.z > 1) {
+      return;
+    }
+
+    const x = (screenPoint.x + 1) * rect.width * 0.5;
+    const y = (-screenPoint.y + 1) * rect.height * 0.5;
+    const distance = Math.hypot(x - pointerX, y - pointerY);
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = person;
+    }
+  });
+
+  return nearestDistance <= 56 ? nearest : null;
+}
+
+function getResidentPickHeight(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  const height = box.max.y - box.min.y;
+  return THREE.MathUtils.clamp(height * 0.55, 0.25, 0.9);
 }
 
 function slugify(value) {

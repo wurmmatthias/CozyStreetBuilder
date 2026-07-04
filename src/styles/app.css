@@ -159,6 +159,13 @@ dd {
   width: min(360px, calc(100vw - 24px));
 }
 
+.resident-window {
+  right: 18px;
+  bottom: 18px;
+  width: min(318px, calc(100vw - 24px));
+  max-height: min(470px, calc(100vh - 112px));
+}
+
 .is-dragging {
   user-select: none;
   box-shadow:
@@ -578,6 +585,42 @@ input[type='range']::-webkit-slider-thumb {
   text-overflow: ellipsis;
 }
 
+.resident-window-body {
+  gap: 10px;
+  padding: 12px;
+}
+
+.resident-camera {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgb(191 232 255 / 0.8), rgb(255 249 237 / 0.5)),
+    #bfe8ff;
+  border: 2px solid #f0d0aa;
+  border-bottom-width: 4px;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 8px 18px rgb(117 88 65 / 0.16);
+}
+
+.resident-camera canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.resident-profile {
+  padding: 0 3px 2px;
+}
+
+.resident-mood {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
 .skill-dock {
   position: absolute;
   left: 16px;
@@ -635,6 +678,15 @@ input[type='range']::-webkit-slider-thumb {
   .placement-window,
   .generate-window {
     top: 12px;
+  }
+
+  .resident-window {
+    top: auto;
+    right: 12px;
+    bottom: 76px;
+    left: 12px;
+    width: auto;
+    max-height: min(48vh, 430px);
   }
 
   .window-titlebar {

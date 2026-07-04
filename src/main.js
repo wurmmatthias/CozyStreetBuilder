@@ -150,6 +150,34 @@ app.innerHTML = `
           </div>
         </section>
 
+        <section class="game-window resident-window" data-window="resident" aria-label="Resident camera window" hidden>
+          <header class="window-titlebar" data-drag-handle>
+            <div>
+              <p class="eyebrow">Resident Cam</p>
+              <h2 id="resident-name">No resident</h2>
+            </div>
+            <button class="window-close" type="button" data-window-close="resident" title="Close resident camera" aria-label="Close resident camera">X</button>
+          </header>
+
+          <div class="window-body resident-window-body">
+            <div id="resident-camera" class="resident-camera" aria-label="Selected resident camera feed"></div>
+            <dl class="status-list resident-profile">
+              <div>
+                <dt>Occupation</dt>
+                <dd id="resident-occupation">-</dd>
+              </div>
+              <div>
+                <dt>Age</dt>
+                <dd id="resident-age">-</dd>
+              </div>
+              <div>
+                <dt>Mood</dt>
+                <dd id="resident-mood" class="resident-mood">-</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
         <nav class="skill-dock" aria-label="Skill dock">
           <button class="dock-button dock-minimize" type="button" data-ui-toggle title="Minify interface" aria-label="Minify interface">-</button>
           <button class="dock-button" type="button" data-skill="build" data-window-open="assets" title="Build skills">Build</button>
@@ -172,6 +200,12 @@ const controller = new PlacementController(scene, {
   selectedRotation: document.querySelector('#selected-rotation'),
   generateStatus: document.querySelector('#generate-status'),
   modeLabel: document.querySelector('#mode-label'),
+  residentWindow: document.querySelector('[data-window="resident"]'),
+  residentViewport: document.querySelector('#resident-camera'),
+  residentName: document.querySelector('#resident-name'),
+  residentOccupation: document.querySelector('#resident-occupation'),
+  residentAge: document.querySelector('#resident-age'),
+  residentMood: document.querySelector('#resident-mood'),
 });
 
 if (import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
@@ -243,6 +277,10 @@ function minifyInterface() {
 function restoreInterface() {
   shell.dataset.ui = 'expanded';
   windows.forEach((windowElement) => {
+    if (windowElement.dataset.window === 'resident' && !controller.hasSelectedResident()) {
+      return;
+    }
+
     windowElement.hidden = false;
   });
   uiToggle.textContent = '-';

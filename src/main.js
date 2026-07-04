@@ -237,9 +237,10 @@ const windows = [...document.querySelectorAll('.game-window')];
 const dockButtons = [...document.querySelectorAll('[data-window-open]')];
 const uiToggle = document.querySelector('[data-ui-toggle]');
 const compactUiQuery = window.matchMedia('(max-width: 760px)');
+const assetUrl = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 const musicToggle = document.querySelector('#music-toggle');
 const musicToggleIcon = document.querySelector('#music-toggle-icon');
-const backgroundMusic = new Audio('/assets/sounds/bg.mp3');
+const backgroundMusic = new Audio(assetUrl('/assets/sounds/bg.mp3'));
 
 backgroundMusic.loop = true;
 backgroundMusic.muted = true;

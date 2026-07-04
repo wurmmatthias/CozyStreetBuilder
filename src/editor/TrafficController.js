@@ -19,6 +19,7 @@ const FIRE_EXTINGUISH_DISTANCE = 2.6;
 const FIRE_SERVICE_DURATION = 3.2;
 const FIRE_TRUCK_DESPAWN_AFTER_IDLE = 3.5;
 const FIRE_TRUCK_LIGHT_BLINKS_PER_SECOND = 4.8;
+const WATER_PARTICLE_COUNT = 140;
 
 const DIRECTIONS = {
   n: { id: 'n', dx: 0, dz: -1 },
@@ -507,6 +508,13 @@ export class TrafficController {
     }
 
     if (dispatch.phase === 'servicing') {
+      if (!dispatch.building?.parent) {
+        this.disposeFireHoseSpray(dispatch);
+        dispatch.callbacks.onUnavailable?.('The burning building is gone.');
+        return false;
+      }
+
+      updateFireHoseSpray(dispatch.waterSpray, dispatch, delta);
       dispatch.serviceTime -= delta;
 
       if (dispatch.serviceTime <= 0 && !dispatch.extinguished) {
@@ -618,6 +626,8 @@ export class TrafficController {
     dispatch.serviceTime = FIRE_SERVICE_DURATION;
     dispatch.progress = 0;
     dispatch.idleTime = 0;
+    dispatch.waterSpray = createFireHoseSpray();
+    this.sceneManager.add(dispatch.waterSpray.object);
     dispatch.callbacks.onStatusChange?.('Fire truck on scene.');
   }
 
@@ -625,6 +635,7 @@ export class TrafficController {
     const currentRoad = this.roadMap.get(cellKey(dispatch.cell));
     const exitPlan = currentRoad ? this.getPoliceExitPlan(currentRoad) : null;
 
+    this.disposeFireHoseSpray(dispatch);
     dispatch.phase = 'exit';
     dispatch.building = null;
     dispatch.speed = 2.7;
@@ -951,7 +962,19 @@ export class TrafficController {
 
   removeFireDispatch(index) {
     const [dispatch] = this.fireDispatches.splice(index, 1);
+    this.disposeFireHoseSpray(dispatch);
     this.sceneManager.remove(dispatch.object);
+  }
+
+  disposeFireHoseSpray(dispatch) {
+    if (!dispatch?.waterSpray) {
+      return;
+    }
+
+    this.sceneManager.remove(dispatch.waterSpray.object);
+    dispatch.waterSpray.geometry.dispose();
+    dispatch.waterSpray.material.dispose();
+    dispatch.waterSpray = null;
   }
 
   trimTrafficToDensity() {
@@ -1072,6 +1095,128 @@ function updateFireTruckLights(dispatch, now) {
   lights.blueLight.intensity = pulse ? 0.1 : 1.8;
 }
 
+function createFireHoseSpray() {
+  const positions = new Float32Array(WATER_PARTICLE_COUNT * 3);
+  const geometry = new THREE.BufferGeometry();
+  const material = new THREE.PointsMaterial({
+    color: '#33bfff',
+    size: 0.095,
+    transparent: true,
+    opacity: 0.88,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+  const object = new THREE.Points(geometry, material);
+  const particles = [];
+
+  for (let index = 0; index < WATER_PARTICLE_COUNT; index += 1) {
+    particles.push(createWaterParticle(Math.random()));
+    positions[index * 3] = 0;
+    positions[index * 3 + 1] = -100;
+    positions[index * 3 + 2] = 0;
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  object.name = 'Fire Hose Water Spray';
+  object.frustumCulled = false;
+
+  return {
+    object,
+    geometry,
+    material,
+    positions,
+    particles,
+  };
+}
+
+function createWaterParticle(progress = 0) {
+  return {
+    progress,
+    speed: randomFloat(1.85, 3.75),
+    spread: randomFloat(0.08, 0.42),
+    sideA: randomFloat(-1, 1),
+    sideB: randomFloat(-1, 1),
+    phase: randomFloat(0, Math.PI * 2),
+    wobble: randomFloat(0.03, 0.16),
+  };
+}
+
+function resetWaterParticle(particle) {
+  Object.assign(particle, createWaterParticle(0));
+}
+
+function updateFireHoseSpray(spray, dispatch, delta) {
+  if (!spray || !dispatch.building?.parent) {
+    return;
+  }
+
+  const { emitter, target } = getFireHoseEndpoints(dispatch);
+  const path = new THREE.Vector3().subVectors(target, emitter);
+  const distance = path.length();
+
+  if (distance < 0.001) {
+    return;
+  }
+
+  const forward = path.normalize();
+  let right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+
+  if (right.lengthSq() < 0.001) {
+    right = new THREE.Vector3(1, 0, 0);
+  } else {
+    right.normalize();
+  }
+
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  const position = new THREE.Vector3();
+
+  spray.particles.forEach((particle, index) => {
+    particle.progress += delta * particle.speed;
+
+    if (particle.progress >= 1) {
+      resetWaterParticle(particle);
+    }
+
+    const t = THREE.MathUtils.clamp(particle.progress, 0, 1);
+    const turbulence = Math.sin(particle.phase + t * Math.PI * 16) * particle.wobble;
+    const violentSpread = Math.sin(t * Math.PI) * particle.spread + turbulence;
+    const downwardPull = distance * 0.08 * t * t;
+
+    position.lerpVectors(emitter, target, t)
+      .addScaledVector(right, particle.sideA * violentSpread)
+      .addScaledVector(up, particle.sideB * violentSpread)
+      .add(new THREE.Vector3(0, -downwardPull, 0));
+
+    const offset = index * 3;
+    spray.positions[offset] = position.x;
+    spray.positions[offset + 1] = position.y;
+    spray.positions[offset + 2] = position.z;
+  });
+
+  spray.geometry.attributes.position.needsUpdate = true;
+}
+
+function getFireHoseEndpoints(dispatch) {
+  dispatch.object.updateMatrixWorld(true);
+  dispatch.building.updateMatrixWorld(true);
+
+  const truckBox = new THREE.Box3().setFromObject(dispatch.object);
+  const buildingBox = new THREE.Box3().setFromObject(dispatch.building);
+  const truckSize = truckBox.getSize(new THREE.Vector3());
+  const buildingSize = buildingBox.getSize(new THREE.Vector3());
+  const emitter = truckBox.getCenter(new THREE.Vector3());
+  const target = buildingBox.getCenter(new THREE.Vector3());
+  const travelDirection = getDirectionVector(dispatch.direction);
+
+  emitter
+    .addScaledVector(travelDirection, Math.max(truckSize.x, truckSize.z) * 0.38)
+    .setY(truckBox.min.y + truckSize.y * 0.74);
+  target.y = buildingBox.min.y + buildingSize.y * 0.72;
+
+  return { emitter, target };
+}
+
 function cellToPosition(cell) {
   return new THREE.Vector3(cell.x * ROAD_CELL_SIZE, 0, cell.z * ROAD_CELL_SIZE);
 }
@@ -1123,6 +1268,11 @@ function getNeighborCell(cell, direction) {
   };
 }
 
+function getDirectionVector(direction) {
+  const vector = DIRECTIONS[direction] ?? DIRECTIONS.n;
+  return new THREE.Vector3(vector.dx, 0, vector.dz).normalize();
+}
+
 function getPersonCell(person) {
   if (person?.cell) {
     return person.cell;
@@ -1166,4 +1316,8 @@ function mod(value, divisor) {
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function randomFloat(min, max) {
+  return min + Math.random() * (max - min);
 }

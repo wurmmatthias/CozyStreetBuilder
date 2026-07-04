@@ -7,9 +7,39 @@ import { assetPacks } from './editor/assetCatalog.js';
 const app = document.querySelector('#app');
 
 app.innerHTML = `
-  <main class="builder-shell" data-mode="build" data-ui="expanded">
+  <main class="builder-shell" data-mode="build" data-screen="menu" data-ui="expanded">
     <section class="viewport-wrap">
       <div id="viewport" class="viewport" aria-label="3D street builder viewport"></div>
+
+      <section class="main-menu" aria-label="Main menu">
+        <div class="main-menu-content">
+          <h1 class="main-menu-title">Cozy Street Builder</h1>
+          <div class="main-menu-box" aria-label="Main menu actions">
+            <button class="main-menu-button primary" id="start-sandbox" type="button">
+              <i class="fa-solid fa-play" aria-hidden="true"></i>
+              <span>Sandbox Mode</span>
+            </button>
+            <button class="main-menu-button" id="menu-options" type="button" aria-expanded="false" aria-controls="menu-options-panel">
+              <i class="fa-solid fa-gear" aria-hidden="true"></i>
+              <span>Options</span>
+            </button>
+            <div class="main-menu-options" id="menu-options-panel" hidden>
+              <button class="main-menu-button compact" id="menu-music" type="button">
+                <i class="fa-solid fa-volume-xmark" aria-hidden="true"></i>
+                <span>Music Off</span>
+              </button>
+              <button class="main-menu-button compact" id="menu-fullscreen" type="button">
+                <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                <span>Fullscreen</span>
+              </button>
+            </div>
+            <button class="main-menu-button credit" id="created-by" type="button">
+              <i class="fa-solid fa-star" aria-hidden="true"></i>
+              <span>Created by Matthias Wurm</span>
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div class="hud-root" aria-label="Street builder interface">
         <div class="top-right-controls" aria-label="Viewport controls">
@@ -264,7 +294,13 @@ const musicToggle = document.querySelector('#music-toggle');
 const musicToggleIcon = document.querySelector('#music-toggle-icon');
 const fullscreenToggle = document.querySelector('#fullscreen-toggle');
 const fullscreenToggleIcon = document.querySelector('#fullscreen-toggle-icon');
+const startSandbox = document.querySelector('#start-sandbox');
+const menuOptions = document.querySelector('#menu-options');
+const menuOptionsPanel = document.querySelector('#menu-options-panel');
+const menuMusic = document.querySelector('#menu-music');
+const menuFullscreen = document.querySelector('#menu-fullscreen');
 const backgroundMusic = new Audio(assetUrl('/assets/sounds/bg.mp3'));
+let mainMenuTownActive = false;
 
 backgroundMusic.loop = true;
 backgroundMusic.muted = true;
@@ -274,6 +310,8 @@ function setMusicMuted(isMuted) {
   backgroundMusic.muted = isMuted;
   musicToggle.classList.toggle('is-muted', isMuted);
   musicToggleIcon.className = isMuted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+  menuMusic.querySelector('.fa-solid').className = isMuted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+  menuMusic.querySelector('span').textContent = isMuted ? 'Music Off' : 'Music On';
   musicToggle.setAttribute('aria-pressed', String(!isMuted));
   musicToggle.setAttribute('aria-label', isMuted ? 'Turn music on' : 'Mute music');
   musicToggle.title = isMuted ? 'Turn music on' : 'Mute music';
@@ -290,6 +328,8 @@ function setMusicMuted(isMuted) {
 
 function setFullscreenButtonState(isFullscreen) {
   fullscreenToggleIcon.className = isFullscreen ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+  menuFullscreen.querySelector('.fa-solid').className = isFullscreen ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+  menuFullscreen.querySelector('span').textContent = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
   fullscreenToggle.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen');
   fullscreenToggle.title = isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen';
 }
@@ -305,6 +345,40 @@ async function toggleFullscreen() {
   } catch {
     setFullscreenButtonState(Boolean(document.fullscreenElement));
   }
+}
+
+function getGenerationOptionsFromControls() {
+  return {
+    townSize: Number(townSize.value),
+    buildingDensity: Number(buildingDensity.value) / 100,
+    foliageDensity: Number(foliageDensity.value) / 100,
+    trafficDensity: Number(generateTrafficDensity.value) / 100,
+  };
+}
+
+function generateMainMenuTown() {
+  controller.setGenerationOptions(getGenerationOptionsFromControls());
+  controller.setTrafficDensity(Number(generateTrafficDensity.value) / 100);
+  controller.generateTown();
+  controller.select(null);
+  controller.clearGhost();
+  mainMenuTownActive = true;
+}
+
+function clearMainMenuTown() {
+  if (!mainMenuTownActive) {
+    return;
+  }
+
+  controller.clearTown();
+  mainMenuTownActive = false;
+}
+
+function enterGameMode(mode) {
+  shell.dataset.screen = 'game';
+  clearMainMenuTown();
+  setMode(mode);
+  openWindow('command');
 }
 
 function setMode(mode) {
@@ -488,11 +562,26 @@ document.addEventListener('fullscreenchange', () => {
 musicToggle.addEventListener('click', () => {
   setMusicMuted(!backgroundMusic.muted);
 });
+startSandbox.addEventListener('click', () => {
+  enterGameMode('build');
+});
+menuOptions.addEventListener('click', () => {
+  const isOpen = menuOptions.getAttribute('aria-expanded') === 'true';
+  menuOptions.setAttribute('aria-expanded', String(!isOpen));
+  menuOptionsPanel.hidden = isOpen;
+});
+menuMusic.addEventListener('click', () => {
+  setMusicMuted(!backgroundMusic.muted);
+});
+menuFullscreen.addEventListener('click', toggleFullscreen);
 
 if (!document.fullscreenEnabled) {
   fullscreenToggle.disabled = true;
   fullscreenToggle.title = 'Fullscreen is not available';
   fullscreenToggle.setAttribute('aria-label', 'Fullscreen is not available');
+  menuFullscreen.disabled = true;
+  menuFullscreen.title = 'Fullscreen is not available';
+  menuFullscreen.setAttribute('aria-label', 'Fullscreen is not available');
 }
 
 setFullscreenButtonState(Boolean(document.fullscreenElement));
@@ -576,5 +665,8 @@ document.querySelector('#generate-town').addEventListener('click', () => control
 document.querySelector('#clear-town').addEventListener('click', () => controller.clearTown());
 
 await controller.loadAssets(assetPacks);
+if (shell.dataset.screen === 'menu') {
+  generateMainMenuTown();
+}
 setMode('build');
 scene.start();

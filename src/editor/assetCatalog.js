@@ -108,6 +108,14 @@ export const assetPacks = [
     rotationStep: 45,
   },
   {
+    id: 'streetlight',
+    name: 'Streetlight',
+    url: assetUrl('/assets/Streetlight.glb'),
+    kind: 'streetlight',
+    scale: 0.58,
+    rotationStep: 90,
+  },
+  {
     id: 'car',
     name: 'Car',
     url: assetUrl('/assets/cars/Car.glb'),

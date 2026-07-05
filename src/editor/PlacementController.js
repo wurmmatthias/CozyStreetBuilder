@@ -10,6 +10,9 @@ const FIRE_CHECK_MAX_SECONDS = 70;
 const FIRE_START_CHANCE = 0.9;
 const MAX_ACTIVE_FIRES = 1;
 const SMOKE_PUFF_COUNT = 12;
+const STREETLIGHT_ROAD_EDGE_OFFSET = 1.06;
+const STREETLIGHT_SNAP_RADIUS = 2.35;
+const GENERATED_STREETLIGHT_ROAD_COVERAGE = 0.24;
 const DIRECTIONS = [
   { id: 'n', dx: 0, dz: -1 },
   { id: 'e', dx: 1, dz: 0 },
@@ -155,6 +158,7 @@ export class PlacementController {
       { kind: 'road', title: 'Roads' },
       { kind: 'building', title: 'Buildings' },
       { kind: 'foliage', title: 'Foliage' },
+      { kind: 'streetlight', title: 'Lighting' },
     ].forEach((group) => {
       const assets = this.assets.filter((asset) => asset.showInPalette !== false && asset.kind === group.kind);
 
@@ -298,8 +302,15 @@ export class PlacementController {
       return;
     }
 
-    this.lastSnap.copy(snapToGrid(groundPoint, this.gridSize));
+    const placement = this.getPlacementSnap(groundPoint);
+
+    this.lastSnap.copy(placement.position);
     this.ghost.position.copy(this.lastSnap);
+
+    if (placement.rotation !== null) {
+      this.ghost.rotation.y = placement.rotation;
+    }
+
     this.ghost.visible = true;
   }
 
@@ -511,6 +522,7 @@ export class PlacementController {
     const roadParts = getRoadParts(this.assets);
     const buildingAssets = this.assets.filter((asset) => asset.kind === 'building');
     const foliageAssets = this.assets.filter((asset) => asset.kind === 'foliage');
+    const streetlightAssets = this.assets.filter((asset) => asset.kind === 'streetlight');
 
     if (!roadParts.any || buildingAssets.length === 0) {
       if (this.elements.generateStatus) {
@@ -559,6 +571,30 @@ export class PlacementController {
       return false;
     });
 
+    const streetlightPlacements = createStreetlightPlacements(town, roadSet);
+    const maxStreetlights = streetlightAssets.length === 0
+      ? 0
+      : Math.round(town.cells.length * GENERATED_STREETLIGHT_ROAD_COVERAGE);
+    const lightedRoads = new Set();
+    let streetlightCount = 0;
+
+    shuffle(streetlightPlacements).some((placement) => {
+      if (streetlightCount >= maxStreetlights) {
+        return true;
+      }
+
+      if (lightedRoads.has(placement.roadKey)) {
+        return false;
+      }
+
+      const asset = randomItem(streetlightAssets);
+      this.placeGeneratedAssetAt(asset, placement.position, placement.rotation);
+      lightedRoads.add(placement.roadKey);
+      usedCells.add(cellKey(placement.sideCell));
+      streetlightCount += 1;
+      return false;
+    });
+
     const foliageLots = createFoliageLots(town, usedCells);
     const maxFoliage = foliageAssets.length === 0 ? 0 : Math.round(foliageLots.length * THREE.MathUtils.lerp(0, 0.46, this.generationOptions.foliageDensity));
     let foliageCount = 0;
@@ -576,7 +612,7 @@ export class PlacementController {
     });
 
     if (this.elements.generateStatus) {
-      this.elements.generateStatus.textContent = `${roadCount} roads, ${buildingCount} buildings, ${foliageCount} trees`;
+      this.elements.generateStatus.textContent = `${roadCount} roads, ${buildingCount} buildings, ${streetlightCount} lights, ${foliageCount} trees`;
     }
 
     this.elements.modeLabel.textContent = 'Fresh town generated.';
@@ -584,8 +620,16 @@ export class PlacementController {
   }
 
   placeGeneratedAsset(asset, cellX, cellZ, rotation) {
+    return this.placeGeneratedAssetAt(
+      asset,
+      new THREE.Vector3(cellX * TOWN_CELL_SIZE, 0, cellZ * TOWN_CELL_SIZE),
+      rotation,
+    );
+  }
+
+  placeGeneratedAssetAt(asset, position, rotation) {
     const object = makePlaceableClone(asset.source, asset);
-    object.position.set(cellX * TOWN_CELL_SIZE, 0, cellZ * TOWN_CELL_SIZE);
+    object.position.copy(position);
     object.rotation.y = rotation;
     object.userData.editorObject = true;
     object.userData.assetId = asset.id;
@@ -594,6 +638,48 @@ export class PlacementController {
     this.placed.push(object);
     this.sceneManager.add(object);
     return object;
+  }
+
+  getPlacementSnap(groundPoint) {
+    if (this.activeAsset?.kind === 'streetlight') {
+      const streetlightSnap = this.getStreetlightRoadSnap(groundPoint);
+
+      if (streetlightSnap) {
+        return streetlightSnap;
+      }
+    }
+
+    return {
+      position: snapToGrid(groundPoint, this.gridSize),
+      rotation: null,
+    };
+  }
+
+  getStreetlightRoadSnap(point) {
+    const roads = this.placed.filter((object) => object.userData.assetKind === 'road');
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    roads.forEach((road) => {
+      const distance = Math.hypot(point.x - road.position.x, point.z - road.position.z);
+
+      if (distance < nearestDistance) {
+        nearest = road;
+        nearestDistance = distance;
+      }
+    });
+
+    if (!nearest || nearestDistance > STREETLIGHT_SNAP_RADIUS) {
+      return null;
+    }
+
+    const dx = point.x - nearest.position.x;
+    const dz = point.z - nearest.position.z;
+    const sideDirection = Math.abs(dx) > Math.abs(dz)
+      ? { dx: dx >= 0 ? 1 : -1, dz: 0 }
+      : { dx: 0, dz: dz >= 0 ? 1 : -1 };
+
+    return createStreetlightPlacementForSide(nearest.position.x, nearest.position.z, sideDirection);
   }
 
   deleteSelected() {
@@ -1351,6 +1437,69 @@ function createFoliageLots(town, usedCells) {
   return lots;
 }
 
+function createStreetlightPlacements(town, roadSet) {
+  const placements = [];
+
+  town.cells.forEach((cell) => {
+    const connections = getRoadConnections(cell, roadSet);
+    const sideDirections = getStreetlightSideDirections(connections);
+
+    sideDirections.forEach((direction) => {
+      const sideCell = { x: cell.x + direction.dx, z: cell.z + direction.dz };
+
+      if (
+        roadSet.has(cellKey(sideCell)) ||
+        Math.abs(sideCell.x) > town.span ||
+        Math.abs(sideCell.z) > town.span
+      ) {
+        return;
+      }
+
+      placements.push({
+        ...createStreetlightPlacementForSide(
+          cell.x * TOWN_CELL_SIZE,
+          cell.z * TOWN_CELL_SIZE,
+          direction,
+        ),
+        roadKey: cellKey(cell),
+        sideCell,
+      });
+    });
+  });
+
+  return placements;
+}
+
+function getStreetlightSideDirections(connections) {
+  const has = (id) => connections.includes(id);
+  const northSouth = has('n') || has('s');
+  const eastWest = has('e') || has('w');
+
+  if (northSouth && !eastWest) {
+    return DIRECTIONS.filter((direction) => direction.id === 'e' || direction.id === 'w');
+  }
+
+  if (eastWest && !northSouth) {
+    return DIRECTIONS.filter((direction) => direction.id === 'n' || direction.id === 's');
+  }
+
+  return DIRECTIONS;
+}
+
+function createStreetlightPlacementForSide(roadX, roadZ, sideDirection) {
+  const sideNormal = new THREE.Vector3(sideDirection.dx, 0, sideDirection.dz);
+  const position = new THREE.Vector3(
+    roadX + sideNormal.x * STREETLIGHT_ROAD_EDGE_OFFSET,
+    0,
+    roadZ + sideNormal.z * STREETLIGHT_ROAD_EDGE_OFFSET,
+  );
+
+  return {
+    position,
+    rotation: rotationFacingDirection(-sideNormal.x, -sideNormal.z),
+  };
+}
+
 function getRoadParts(assets) {
   const roads = assets.filter((asset) => asset.kind === 'road');
   const find = (...needles) => roads.find((asset) => needles.every((needle) => searchableName(asset).includes(needle)));
@@ -1406,6 +1555,10 @@ function rotationFacingRoad(roadDirections) {
   if (direction === 'e') return Math.PI / 2;
   if (direction === 'w') return -Math.PI / 2;
   return 0;
+}
+
+function rotationFacingDirection(dx, dz) {
+  return Math.atan2(dx, dz);
 }
 
 function randomFoliageRotation() {

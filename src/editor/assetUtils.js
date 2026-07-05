@@ -23,6 +23,7 @@ export function makePlaceableClone(source, asset) {
   placeable.userData.assetId = asset.id;
   placeable.userData.assetName = asset.name;
   placeable.userData.assetKind = asset.kind ?? 'asset';
+  placeable.userData.assetScale = asset.scale ?? 1;
   placeable.userData.rotationStep = asset.rotationStep ?? 90;
   return placeable;
 }

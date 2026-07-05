@@ -11,6 +11,9 @@ const CLOUD_MAX_HEIGHT = 28;
 const CLOUD_WRAP_PADDING = 24;
 const DAY_LENGTH_SECONDS = 240;
 const CLOCK_STEP_MINUTES = 15;
+const STREETLIGHT_TURN_ON_SPREAD_SECONDS = 5.2;
+const STREETLIGHT_TURN_ON_SECONDS = 1.4;
+const STREETLIGHT_UPDATE_INTERVAL = 1 / 12;
 
 export class SceneManager {
   constructor(container) {
@@ -25,6 +28,9 @@ export class SceneManager {
     this.clouds = [];
     this.followCameraFeeds = new Set();
     this.windowGlowMaterials = new Set();
+    this.streetlightFixtures = new Set();
+    this.streetlightActivationClock = 0;
+    this.streetlightUpdateAccumulator = 0;
     this.dayNightSubscribers = new Set();
     this.fictionalMinutes = 8 * 60;
     this.isTimePaused = false;
@@ -37,6 +43,7 @@ export class SceneManager {
     this.groundDayColor = new THREE.Color('#74b85b');
     this.groundNightColor = new THREE.Color('#2f5645');
     this.windowGlowColor = new THREE.Color('#ffd978');
+    this.streetlightGlowColor = new THREE.Color('#ffd18a');
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -151,6 +158,7 @@ export class SceneManager {
     );
 
     this.updateWindowGlow(nightFactor);
+    this.updateStreetlightGlow(nightFactor, delta);
 
     if (clockStep !== this.lastClockStep || !this.dayNightState || this.dayNightState.isPaused !== this.isTimePaused) {
       this.lastClockStep = clockStep;
@@ -263,6 +271,76 @@ export class SceneManager {
     delete object.userData.windowGlowMaterials;
   }
 
+  registerStreetlight(object) {
+    if (object.userData.assetKind !== 'streetlight' || !object.userData.editorObject || object.userData.streetlightFixture) {
+      return;
+    }
+
+    const fixture = createStreetlightFixture(object);
+
+    object.add(fixture.group);
+    object.userData.streetlightFixture = fixture;
+    this.streetlightFixtures.add(fixture);
+    this.updateStreetlightGlow(this.dayNightState?.nightFactor ?? 0, 0);
+  }
+
+  unregisterStreetlight(object) {
+    const fixture = object.userData.streetlightFixture;
+
+    if (!fixture) {
+      return;
+    }
+
+    this.streetlightFixtures.delete(fixture);
+    object.remove(fixture.group);
+    disposeStreetlightFixture(fixture);
+    delete object.userData.streetlightFixture;
+  }
+
+  updateStreetlightGlow(nightFactor, delta = 0) {
+    const baseGlowStrength = nightFactor * nightFactor;
+    const lightIsRising = baseGlowStrength > 0.04;
+
+    this.streetlightUpdateAccumulator += delta;
+
+    if (lightIsRising) {
+      this.streetlightActivationClock += delta;
+    } else {
+      this.streetlightActivationClock = 0;
+    }
+
+    if (this.streetlightUpdateAccumulator < STREETLIGHT_UPDATE_INTERVAL && delta > 0) {
+      return;
+    }
+
+    this.streetlightUpdateAccumulator = 0;
+
+    this.streetlightFixtures.forEach((fixture) => {
+      const delayedProgress = lightIsRising
+        ? smoothstep(
+          fixture.turnOnDelay,
+          fixture.turnOnDelay + STREETLIGHT_TURN_ON_SECONDS,
+          this.streetlightActivationClock,
+        )
+        : 0;
+      const glowStrength = baseGlowStrength * delayedProgress;
+
+      fixture.glowStrength = glowStrength;
+      fixture.beamMaterial.opacity = glowStrength * 0.12;
+      fixture.poolMaterial.opacity = glowStrength * 0.2;
+      fixture.beam.visible = glowStrength > 0.01;
+      fixture.pool.visible = glowStrength > 0.01;
+
+      fixture.materials.forEach((material) => {
+        const baseEmissive = material.userData.streetlightBaseEmissive ?? new THREE.Color('#000000');
+        const baseIntensity = material.userData.streetlightBaseEmissiveIntensity ?? 0;
+
+        material.emissive.copy(baseEmissive).lerp(this.streetlightGlowColor, glowStrength);
+        material.emissiveIntensity = baseIntensity + glowStrength * 2.8;
+      });
+    });
+  }
+
   async addClouds() {
     const loader = new GLTFLoader();
 
@@ -342,9 +420,11 @@ export class SceneManager {
   add(object) {
     this.scene.add(object);
     this.registerBuildingWindows(object);
+    this.registerStreetlight(object);
   }
 
   remove(object) {
+    this.unregisterStreetlight(object);
     this.unregisterBuildingWindows(object);
     this.scene.remove(object);
   }
@@ -528,6 +608,88 @@ function hasRenderableMesh(object) {
     hasMesh = hasMesh || child.isMesh;
   });
   return hasMesh;
+}
+
+function createStreetlightFixture(object) {
+  const group = new THREE.Group();
+  const scale = object.userData.assetScale ?? 1;
+  const materials = [];
+  const lampPosition = new THREE.Vector3(0, 2.48 * scale, 0.28 * scale);
+  const roadPosition = new THREE.Vector3(0, 0.025, 1.54 * scale);
+  const lampToRoad = roadPosition.clone().sub(lampPosition);
+  const beamHeight = lampToRoad.length();
+  const beamDirection = lampToRoad.clone().normalize();
+  const beamMaterial = new THREE.MeshBasicMaterial({
+    color: '#ffd18a',
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const poolMaterial = new THREE.MeshBasicMaterial({
+    color: '#ffd18a',
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const beam = new THREE.Mesh(
+    new THREE.ConeGeometry(0.5 * scale, beamHeight, 14, 1, true),
+    beamMaterial,
+  );
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 18), poolMaterial);
+
+  group.name = 'Streetlight Night Lighting';
+  beam.name = 'Streetlight Beam';
+  pool.name = 'Streetlight Road Glow';
+  beam.visible = false;
+  pool.visible = false;
+  beam.renderOrder = 2;
+  pool.renderOrder = 1;
+  beam.position.copy(lampPosition).add(beamDirection.clone().multiplyScalar(beamHeight * 0.5));
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), beamDirection);
+  pool.position.copy(roadPosition);
+  pool.rotation.x = -Math.PI / 2;
+  pool.scale.set(0.62 * scale, 1.36 * scale, 1);
+  group.add(beam, pool);
+
+  object.traverse((child) => {
+    if (!child.isMesh || !child.material) {
+      return;
+    }
+
+    const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
+
+    childMaterials.forEach((material) => {
+      if (!material?.emissive || material.name.toLowerCase() !== 'light' || materials.includes(material)) {
+        return;
+      }
+
+      material.userData.streetlightBaseEmissive = material.emissive.clone();
+      material.userData.streetlightBaseEmissiveIntensity = material.emissiveIntensity ?? 0;
+      materials.push(material);
+    });
+  });
+
+  return {
+    group,
+    beam,
+    pool,
+    beamMaterial,
+    poolMaterial,
+    materials,
+    glowStrength: 0,
+    turnOnDelay: randomFloat(0, STREETLIGHT_TURN_ON_SPREAD_SECONDS),
+  };
+}
+
+function disposeStreetlightFixture(fixture) {
+  fixture.beam.geometry.dispose();
+  fixture.pool.geometry.dispose();
+  fixture.beamMaterial.dispose();
+  fixture.poolMaterial.dispose();
 }
 
 function normalizeCloudModel(model, targetWidth) {

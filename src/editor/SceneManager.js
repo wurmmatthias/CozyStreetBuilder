@@ -9,18 +9,34 @@ const CLOUD_FIELD_HALF_WIDTH = 76;
 const CLOUD_MIN_HEIGHT = 14;
 const CLOUD_MAX_HEIGHT = 28;
 const CLOUD_WRAP_PADDING = 24;
+const DAY_LENGTH_SECONDS = 240;
+const CLOCK_STEP_MINUTES = 15;
 
 export class SceneManager {
   constructor(container) {
     this.container = container;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#8fd0ee');
+    this.scene.fog = new THREE.Fog('#8fd0ee', 76, 178);
     this.lastFrameTime = performance.now();
     this.gridVisible = true;
     this.pressedKeys = new Set();
     this.updaters = new Set();
     this.clouds = [];
     this.followCameraFeeds = new Set();
+    this.windowGlowMaterials = new Set();
+    this.dayNightSubscribers = new Set();
+    this.fictionalMinutes = 8 * 60;
+    this.isTimePaused = false;
+    this.lastClockStep = -1;
+    this.dayNightState = null;
+    this.skyDayColor = new THREE.Color('#8fd0ee');
+    this.skyNightColor = new THREE.Color('#15213c');
+    this.fogDayColor = new THREE.Color('#8fd0ee');
+    this.fogNightColor = new THREE.Color('#192847');
+    this.groundDayColor = new THREE.Color('#74b85b');
+    this.groundNightColor = new THREE.Color('#2f5645');
+    this.windowGlowColor = new THREE.Color('#ffd978');
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -43,6 +59,8 @@ export class SceneManager {
     this.scene.add(this.ground, this.grid);
     this.addLighting();
     this.addClouds();
+    this.updateDayNightCycle(0);
+    this.addUpdater((delta) => this.updateDayNightCycle(delta));
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
@@ -92,18 +110,157 @@ export class SceneManager {
   }
 
   addLighting() {
-    const hemi = new THREE.HemisphereLight('#f8f4df', '#6f8f68', 2.25);
-    this.scene.add(hemi);
+    this.hemiLight = new THREE.HemisphereLight('#f8f4df', '#6f8f68', 2.25);
+    this.scene.add(this.hemiLight);
 
-    const sun = new THREE.DirectionalLight('#fff2d5', 3.35);
-    sun.position.set(14, 24, 10);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -35;
-    sun.shadow.camera.right = 35;
-    sun.shadow.camera.top = 35;
-    sun.shadow.camera.bottom = -35;
-    this.scene.add(sun);
+    this.sunLight = new THREE.DirectionalLight('#fff2d5', 3.35);
+    this.sunLight.position.set(14, 24, 10);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.set(2048, 2048);
+    this.sunLight.shadow.camera.left = -35;
+    this.sunLight.shadow.camera.right = 35;
+    this.sunLight.shadow.camera.top = 35;
+    this.sunLight.shadow.camera.bottom = -35;
+    this.scene.add(this.sunLight);
+  }
+
+  updateDayNightCycle(delta) {
+    if (!this.isTimePaused) {
+      const minutesPerSecond = (24 * 60) / DAY_LENGTH_SECONDS;
+      this.fictionalMinutes = (this.fictionalMinutes + delta * minutesPerSecond) % (24 * 60);
+    }
+
+    const dayProgress = this.fictionalMinutes / (24 * 60);
+    const sunHeight = Math.sin((dayProgress - 0.25) * Math.PI * 2);
+    const daylight = smoothstep(-0.08, 0.3, sunHeight);
+    const nightFactor = 1 - smoothstep(-0.22, 0.14, sunHeight);
+    const sunAngle = dayProgress * Math.PI * 2;
+    const clockStep = Math.floor(this.fictionalMinutes / CLOCK_STEP_MINUTES);
+
+    this.scene.background.copy(this.skyDayColor).lerp(this.skyNightColor, nightFactor);
+    this.scene.fog.color.copy(this.fogDayColor).lerp(this.fogNightColor, nightFactor);
+    this.ground.material.color.copy(this.groundDayColor).lerp(this.groundNightColor, nightFactor);
+    this.grid.material.opacity = THREE.MathUtils.lerp(0.24, 0.5, daylight);
+
+    this.hemiLight.intensity = THREE.MathUtils.lerp(0.28, 2.25, daylight);
+    this.sunLight.intensity = THREE.MathUtils.lerp(0.04, 3.35, daylight);
+    this.sunLight.position.set(
+      Math.cos(sunAngle) * 22,
+      THREE.MathUtils.lerp(2, 26, Math.max(sunHeight, 0)),
+      Math.sin(sunAngle) * 22,
+    );
+
+    this.updateWindowGlow(nightFactor);
+
+    if (clockStep !== this.lastClockStep || !this.dayNightState || this.dayNightState.isPaused !== this.isTimePaused) {
+      this.lastClockStep = clockStep;
+      this.dayNightState = this.createDayNightState(daylight, nightFactor);
+      this.dayNightSubscribers.forEach((subscriber) => subscriber(this.dayNightState));
+    }
+  }
+
+  createDayNightState(daylight, nightFactor) {
+    const displayMinutes = Math.floor(this.fictionalMinutes / CLOCK_STEP_MINUTES) * CLOCK_STEP_MINUTES;
+    const hours = Math.floor(displayMinutes / 60) % 24;
+    const minutes = displayMinutes % 60;
+    const isNight = nightFactor > 0.62;
+    const period = isNight ? 'Moonrise' : daylight < 0.72 ? 'Golden Hour' : 'Sunlit';
+
+    return {
+      clockLabel: `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`,
+      daylight,
+      nightFactor,
+      period,
+      isNight,
+      isPaused: this.isTimePaused,
+    };
+  }
+
+  setFictionalTime(minutes) {
+    this.fictionalMinutes = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    this.lastClockStep = -1;
+    this.updateDayNightCycle(0);
+  }
+
+  setDayTime() {
+    this.setFictionalTime(10 * 60);
+  }
+
+  setNightTime() {
+    this.setFictionalTime(22 * 60);
+  }
+
+  setTimePaused(paused) {
+    this.isTimePaused = paused;
+    this.updateDayNightCycle(0);
+  }
+
+  toggleTimePaused() {
+    this.setTimePaused(!this.isTimePaused);
+  }
+
+  onDayNightChange(callback) {
+    this.dayNightSubscribers.add(callback);
+
+    if (this.dayNightState) {
+      callback(this.dayNightState);
+    }
+
+    return () => this.dayNightSubscribers.delete(callback);
+  }
+
+  updateWindowGlow(nightFactor) {
+    const glowStrength = nightFactor * nightFactor;
+
+    this.windowGlowMaterials.forEach((material) => {
+      if (!material.emissive) {
+        return;
+      }
+
+      const baseEmissive = material.userData.dayNightBaseEmissive ?? new THREE.Color('#000000');
+      const baseIntensity = material.userData.dayNightBaseEmissiveIntensity ?? 0;
+
+      material.emissive.copy(baseEmissive).lerp(this.windowGlowColor, glowStrength);
+      material.emissiveIntensity = baseIntensity + glowStrength * 0.95;
+    });
+  }
+
+  registerBuildingWindows(object) {
+    if (object.userData.assetKind !== 'building' || !object.userData.editorObject || object.userData.windowGlowMaterials) {
+      return;
+    }
+
+    const materials = [];
+
+    object.traverse((child) => {
+      if (!child.isMesh || !child.material) {
+        return;
+      }
+
+      const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
+
+      childMaterials.forEach((material) => {
+        if (!material?.emissive || !isWindowMaterial(child, material) || materials.includes(material)) {
+          return;
+        }
+
+        material.userData.dayNightBaseEmissive = material.emissive.clone();
+        material.userData.dayNightBaseEmissiveIntensity = material.emissiveIntensity ?? 0;
+        materials.push(material);
+        this.windowGlowMaterials.add(material);
+      });
+    });
+
+    object.userData.windowGlowMaterials = materials;
+    this.updateWindowGlow(this.dayNightState?.nightFactor ?? 0);
+  }
+
+  unregisterBuildingWindows(object) {
+    object.userData.windowGlowMaterials?.forEach((material) => {
+      this.windowGlowMaterials.delete(material);
+    });
+
+    delete object.userData.windowGlowMaterials;
   }
 
   async addClouds() {
@@ -184,9 +341,11 @@ export class SceneManager {
 
   add(object) {
     this.scene.add(object);
+    this.registerBuildingWindows(object);
   }
 
   remove(object) {
+    this.unregisterBuildingWindows(object);
     this.scene.remove(object);
   }
 
@@ -410,6 +569,24 @@ function updateFollowCamera(feed, delta) {
 
   feed.camera.position.copy(feed.smoothPosition);
   feed.camera.lookAt(feed.smoothLookAt);
+}
+
+function smoothstep(edge0, edge1, value) {
+  const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function isWindowMaterial(mesh, material) {
+  const materialName = material.name.toLowerCase();
+  const meshName = mesh.name.toLowerCase();
+  const searchable = `${meshName} ${materialName}`;
+
+  if (!/(window|glass|pane)/.test(searchable)) {
+    return false;
+  }
+
+  return !/(frame|border|trim|door|roof|wall)/.test(materialName)
+    && !/(frame|border|trim)/.test(meshName);
 }
 
 function randomFloat(min, max) {

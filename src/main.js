@@ -50,6 +50,28 @@ app.innerHTML = `
             <i class="fa-solid fa-volume-xmark" id="music-toggle-icon" aria-hidden="true"></i>
           </button>
         </div>
+        <button class="day-night-clock" id="day-night-clock" type="button" aria-label="Time 08:00, Sunlit" aria-expanded="false" aria-controls="day-night-panel">
+          <i class="fa-solid fa-sun" id="day-night-clock-icon" aria-hidden="true"></i>
+          <div>
+            <span class="clock-kicker">Time</span>
+            <time id="fictional-clock-time" datetime="08:00">08:00</time>
+            <span class="clock-period" id="fictional-clock-period">Sunlit</span>
+          </div>
+        </button>
+        <div class="day-night-panel" id="day-night-panel" hidden>
+          <button id="set-day-time" type="button" title="Set day">
+            <i class="fa-solid fa-sun" aria-hidden="true"></i>
+            <span>Day</span>
+          </button>
+          <button id="set-night-time" type="button" title="Set night">
+            <i class="fa-solid fa-moon" aria-hidden="true"></i>
+            <span>Night</span>
+          </button>
+          <button id="pause-time" type="button" title="Pause time">
+            <i class="fa-solid fa-pause" id="pause-time-icon" aria-hidden="true"></i>
+            <span id="pause-time-label">Pause</span>
+          </button>
+        </div>
 
         <section class="game-window command-window" data-window="command" aria-label="Command window">
           <header class="window-titlebar" data-drag-handle>
@@ -326,6 +348,16 @@ const musicToggle = document.querySelector('#music-toggle');
 const musicToggleIcon = document.querySelector('#music-toggle-icon');
 const fullscreenToggle = document.querySelector('#fullscreen-toggle');
 const fullscreenToggleIcon = document.querySelector('#fullscreen-toggle-icon');
+const dayNightClock = document.querySelector('#day-night-clock');
+const dayNightClockIcon = document.querySelector('#day-night-clock-icon');
+const dayNightPanel = document.querySelector('#day-night-panel');
+const fictionalClockTime = document.querySelector('#fictional-clock-time');
+const fictionalClockPeriod = document.querySelector('#fictional-clock-period');
+const setDayTime = document.querySelector('#set-day-time');
+const setNightTime = document.querySelector('#set-night-time');
+const pauseTime = document.querySelector('#pause-time');
+const pauseTimeIcon = document.querySelector('#pause-time-icon');
+const pauseTimeLabel = document.querySelector('#pause-time-label');
 const startSandbox = document.querySelector('#start-sandbox');
 const menuOptions = document.querySelector('#menu-options');
 const menuOptionsPanel = document.querySelector('#menu-options-panel');
@@ -482,6 +514,11 @@ function toggleInterface() {
   minifyInterface();
 }
 
+function setDayNightPanelOpen(isOpen) {
+  dayNightPanel.hidden = !isOpen;
+  dayNightClock.setAttribute('aria-expanded', String(isOpen));
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -611,6 +648,32 @@ menuMusic.addEventListener('click', () => {
   setMusicMuted(!backgroundMusic.muted);
 });
 menuFullscreen.addEventListener('click', toggleFullscreen);
+dayNightClock.addEventListener('click', () => {
+  setDayNightPanelOpen(dayNightPanel.hidden);
+});
+setDayTime.addEventListener('click', () => {
+  scene.setDayTime();
+  setDayNightPanelOpen(false);
+});
+setNightTime.addEventListener('click', () => {
+  scene.setNightTime();
+  setDayNightPanelOpen(false);
+});
+pauseTime.addEventListener('click', () => {
+  scene.toggleTimePaused();
+});
+document.addEventListener('click', (event) => {
+  if (event.target.closest('.day-night-clock') || event.target.closest('.day-night-panel')) {
+    return;
+  }
+
+  setDayNightPanelOpen(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    setDayNightPanelOpen(false);
+  }
+});
 
 if (!document.fullscreenEnabled) {
   fullscreenToggle.disabled = true;
@@ -623,6 +686,18 @@ if (!document.fullscreenEnabled) {
 
 setFullscreenButtonState(Boolean(document.fullscreenElement));
 setMusicMuted(true);
+scene.onDayNightChange(({ clockLabel, period, isNight, isPaused }) => {
+  fictionalClockTime.textContent = clockLabel;
+  fictionalClockTime.setAttribute('datetime', clockLabel);
+  fictionalClockPeriod.textContent = isPaused ? 'Paused' : period;
+  dayNightClock.classList.toggle('is-night', isNight);
+  dayNightClock.classList.toggle('is-paused', isPaused);
+  dayNightClockIcon.className = isNight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+  pauseTimeIcon.className = isPaused ? 'fa-solid fa-play' : 'fa-solid fa-pause';
+  pauseTimeLabel.textContent = isPaused ? 'Resume' : 'Pause';
+  pauseTime.title = isPaused ? 'Resume time' : 'Pause time';
+  dayNightClock.setAttribute('aria-label', `Time ${clockLabel}, ${isPaused ? 'paused' : period}`);
+});
 
 if (compactUiQuery.matches) {
   document.querySelector('[data-window="placement"]').hidden = true;

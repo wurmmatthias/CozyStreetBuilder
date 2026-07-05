@@ -249,6 +249,183 @@ dd {
   z-index: 8;
 }
 
+.day-night-clock {
+  position: absolute;
+  top: 74px;
+  right: 18px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  width: 168px;
+  min-height: 54px;
+  padding: 8px 10px;
+  color: #624f43;
+  text-align: left;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.88), rgb(255 235 196 / 0.94)),
+    #fff8ec;
+  border: 2px solid #dba978;
+  border-bottom-width: 4px;
+  border-radius: 8px;
+  box-shadow:
+    0 10px 0 rgb(179 129 92 / 0.12),
+    0 18px 36px rgb(117 88 65 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.95);
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+  z-index: 8;
+}
+
+.day-night-clock:hover,
+.day-night-clock[aria-expanded='true'] {
+  color: #4c3f37;
+  background: linear-gradient(180deg, #ffffff, var(--sky));
+  border-color: #76bde5;
+  transform: translateY(-1px);
+}
+
+.day-night-clock:active {
+  border-bottom-width: 2px;
+  transform: translateY(1px);
+}
+
+.day-night-clock .fa-solid {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #d48737;
+  font-size: 1.05rem;
+  background: linear-gradient(180deg, #fff9df, var(--lemon));
+  border: 2px solid #efc77e;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgb(255 233 156 / 0.2);
+}
+
+.day-night-clock div {
+  display: grid;
+  min-width: 0;
+  line-height: 1;
+}
+
+.clock-kicker,
+.clock-period {
+  overflow: hidden;
+  color: #8c6a57;
+  font-size: 0.62rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.day-night-clock time {
+  margin: 3px 0;
+  color: #4d4037;
+  font-size: 1.16rem;
+  font-weight: 1000;
+  letter-spacing: 0;
+}
+
+.day-night-clock.is-night {
+  color: #f8edda;
+  background:
+    linear-gradient(180deg, rgb(45 59 91 / 0.92), rgb(20 29 53 / 0.96)),
+    #17213d;
+  border-color: #596c9d;
+  box-shadow:
+    0 10px 0 rgb(15 19 34 / 0.2),
+    0 18px 36px rgb(13 18 34 / 0.32),
+    inset 0 1px 0 rgb(255 255 255 / 0.14);
+}
+
+.day-night-clock.is-night .fa-solid {
+  color: #f7e9ad;
+  background: linear-gradient(180deg, #546595, #263252);
+  border-color: #7f91c4;
+  box-shadow: 0 0 14px rgb(255 229 148 / 0.28);
+}
+
+.day-night-clock.is-night .clock-kicker,
+.day-night-clock.is-night .clock-period {
+  color: #d5c8af;
+}
+
+.day-night-clock.is-night time {
+  color: #fff7dc;
+}
+
+.day-night-clock.is-paused .clock-period {
+  color: #a6504a;
+}
+
+.day-night-clock.is-night.is-paused .clock-period {
+  color: #ffd6a1;
+}
+
+.day-night-panel {
+  position: absolute;
+  top: 136px;
+  right: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  width: 226px;
+  padding: 8px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.84), rgb(255 241 214 / 0.92)),
+    #fff8ec;
+  border: 2px solid #dba978;
+  border-bottom-width: 4px;
+  border-radius: 8px;
+  box-shadow:
+    0 10px 0 rgb(179 129 92 / 0.12),
+    0 18px 36px rgb(117 88 65 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.95);
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+  z-index: 9;
+}
+
+.day-night-panel button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 7px 6px;
+  color: #624f43;
+  font-size: 0.72rem;
+  font-weight: 950;
+  background: linear-gradient(180deg, #ffffff, #ffe6c2);
+  border: 2px solid #dba978;
+  border-bottom-width: 4px;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.95);
+}
+
+.day-night-panel button:hover {
+  color: #4c3f37;
+  background: linear-gradient(180deg, #ffffff, var(--sky));
+  border-color: #76bde5;
+  transform: translateY(-1px);
+}
+
+.day-night-panel button:active {
+  border-bottom-width: 2px;
+  transform: translateY(1px);
+}
+
+.day-night-panel .fa-solid {
+  font-size: 0.92rem;
+}
+
+.day-night-panel span {
+  overflow-wrap: anywhere;
+}
+
 .hud-button {
   display: grid;
   place-items: center;
@@ -348,13 +525,13 @@ dd {
 
 .placement-window {
   right: 18px;
-  top: 76px;
+  top: 140px;
   width: min(340px, calc(100vw - 24px));
 }
 
 .generate-window {
   right: 18px;
-  top: 76px;
+  top: 140px;
   width: min(360px, calc(100vw - 24px));
 }
 
@@ -984,7 +1161,7 @@ input[type='range']::-webkit-slider-thumb {
 
   .placement-window,
   .generate-window {
-    top: 70px;
+    top: 132px;
   }
 
   .resident-window {

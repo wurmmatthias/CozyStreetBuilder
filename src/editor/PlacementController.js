@@ -144,6 +144,8 @@ export class PlacementController {
         scale: pack.scale ?? 1,
         rotationStep: pack.rotationStep ?? 90,
         showInPalette: pack.showInPalette ?? true,
+        generationRole: pack.generationRole ?? null,
+        generationWeight: pack.generationWeight ?? 1,
         trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
         personForwardAxis: pack.personForwardAxis ?? 'z',
         animations: gltf.animations,
@@ -1568,21 +1570,48 @@ function randomFoliageRotation() {
 function pickBuildingAsset(buildings) {
   const sorted = [...buildings].sort((a, b) => searchableName(a).localeCompare(searchableName(b)));
   const roll = Math.random();
-  const skyscrapers = sorted.filter((asset) => searchableName(asset).includes('skyscraper'));
+  const highrises = sorted.filter((asset) => {
+    const name = searchableName(asset);
+    return asset.generationRole === 'highrise' || name.includes('skyscraper');
+  });
   const storefronts = sorted.filter((asset) => {
     const name = searchableName(asset);
-    return name.includes('store') || name.includes('pizza');
+    return asset.generationRole === 'storefront' || name.includes('store') || name.includes('pizza');
   });
 
-  if (skyscrapers.length > 0 && roll > 0.9) {
-    return randomItem(skyscrapers);
+  if (highrises.length > 0 && roll > 0.9) {
+    return weightedRandomItem(highrises);
   }
 
   if (storefronts.length > 0 && roll < 0.24) {
-    return randomItem(storefronts);
+    return weightedRandomItem(storefronts);
   }
 
-  return randomItem(sorted.filter((asset) => !skyscrapers.includes(asset))) ?? randomItem(sorted);
+  return weightedRandomItem(sorted.filter((asset) => !highrises.includes(asset))) ?? weightedRandomItem(sorted);
+}
+
+function weightedRandomItem(items) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  const totalWeight = items.reduce((total, item) => total + Math.max(item.generationWeight ?? 1, 0), 0);
+
+  if (totalWeight <= 0) {
+    return randomItem(items);
+  }
+
+  let roll = Math.random() * totalWeight;
+
+  for (const item of items) {
+    roll -= Math.max(item.generationWeight ?? 1, 0);
+
+    if (roll <= 0) {
+      return item;
+    }
+  }
+
+  return items.at(-1);
 }
 
 function addRoad(roads, x, z) {

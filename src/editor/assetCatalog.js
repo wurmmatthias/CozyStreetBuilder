@@ -51,6 +51,16 @@ export const assetPacks = [
     rotationStep: 90,
   },
   {
+    id: 'big-building',
+    name: 'Big Building',
+    url: assetUrl('/assets/BigBuilding.glb'),
+    kind: 'building',
+    scale: 0.8,
+    rotationStep: 90,
+    generationRole: 'midrise',
+    generationWeight: 1.15,
+  },
+  {
     id: 'wide-building',
     name: 'Wide Building',
     url: assetUrl('/assets/Wide%20Building.glb'),

@@ -14,6 +14,13 @@ const CLOCK_STEP_MINUTES = 15;
 const STREETLIGHT_TURN_ON_SPREAD_SECONDS = 5.2;
 const STREETLIGHT_TURN_ON_SECONDS = 1.4;
 const STREETLIGHT_UPDATE_INTERVAL = 1 / 12;
+const SUN_LIGHT_DISTANCE = 42;
+const SUN_SHADOW_HALF_SIZE = 32;
+const SUN_SHADOW_MAP_SIZE = 4096;
+const SUN_SHADOW_CAMERA_NEAR = 1;
+const SUN_SHADOW_CAMERA_FAR = 96;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
 
 export class SceneManager {
   constructor(container) {
@@ -44,6 +51,11 @@ export class SceneManager {
     this.groundNightColor = new THREE.Color('#2f5645');
     this.windowGlowColor = new THREE.Color('#ffd978');
     this.streetlightGlowColor = new THREE.Color('#ffd18a');
+    this.sunDirection = new THREE.Vector3(14, 24, 10).normalize();
+    this.sunShadowCenter = new THREE.Vector3();
+    this.sunShadowRight = new THREE.Vector3();
+    this.sunShadowUp = new THREE.Vector3();
+    this.sunShadowView = new THREE.Vector3();
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -121,14 +133,23 @@ export class SceneManager {
     this.scene.add(this.hemiLight);
 
     this.sunLight = new THREE.DirectionalLight('#fff2d5', 3.35);
-    this.sunLight.position.set(14, 24, 10);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.set(2048, 2048);
-    this.sunLight.shadow.camera.left = -35;
-    this.sunLight.shadow.camera.right = 35;
-    this.sunLight.shadow.camera.top = 35;
-    this.sunLight.shadow.camera.bottom = -35;
-    this.scene.add(this.sunLight);
+    this.sunLight.shadow.mapSize.set(SUN_SHADOW_MAP_SIZE, SUN_SHADOW_MAP_SIZE);
+    this.sunLight.shadow.bias = -0.00012;
+    this.sunLight.shadow.normalBias = 0.028;
+    this.sunLight.shadow.radius = 2.25;
+
+    const shadowCamera = this.sunLight.shadow.camera;
+    shadowCamera.left = -SUN_SHADOW_HALF_SIZE;
+    shadowCamera.right = SUN_SHADOW_HALF_SIZE;
+    shadowCamera.top = SUN_SHADOW_HALF_SIZE;
+    shadowCamera.bottom = -SUN_SHADOW_HALF_SIZE;
+    shadowCamera.near = SUN_SHADOW_CAMERA_NEAR;
+    shadowCamera.far = SUN_SHADOW_CAMERA_FAR;
+    shadowCamera.updateProjectionMatrix();
+
+    this.scene.add(this.sunLight, this.sunLight.target);
+    this.updateSunLightShadowCenter();
   }
 
   updateDayNightCycle(delta) {
@@ -151,11 +172,12 @@ export class SceneManager {
 
     this.hemiLight.intensity = THREE.MathUtils.lerp(0.28, 2.25, daylight);
     this.sunLight.intensity = THREE.MathUtils.lerp(0.04, 3.35, daylight);
-    this.sunLight.position.set(
+    this.sunDirection.set(
       Math.cos(sunAngle) * 22,
       THREE.MathUtils.lerp(2, 26, Math.max(sunHeight, 0)),
       Math.sin(sunAngle) * 22,
-    );
+    ).normalize();
+    this.updateSunLightShadowCenter();
 
     this.updateWindowGlow(nightFactor);
     this.updateStreetlightGlow(nightFactor, delta);
@@ -568,12 +590,45 @@ export class SceneManager {
       this.updateKeyboardCamera(delta);
       this.updaters.forEach((updater) => updater(delta, now));
       this.controls.update();
+      this.updateSunLightShadowCenter();
       this.renderer.render(this.scene, this.camera);
       this.renderFollowCameraFeeds(delta);
       requestAnimationFrame(render);
     };
 
     render();
+  }
+
+  updateSunLightShadowCenter() {
+    if (!this.sunLight) {
+      return;
+    }
+
+    const center = this.getSnappedSunShadowCenter(this.controls.target);
+    this.sunLight.target.position.copy(center);
+    this.sunLight.position.copy(center).addScaledVector(this.sunDirection, SUN_LIGHT_DISTANCE);
+    this.sunLight.target.updateMatrixWorld();
+  }
+
+  getSnappedSunShadowCenter(center) {
+    const texelSize = (SUN_SHADOW_HALF_SIZE * 2) / SUN_SHADOW_MAP_SIZE;
+    const viewDirection = this.sunShadowView.copy(this.sunDirection).negate().normalize();
+    const referenceUp = Math.abs(viewDirection.dot(WORLD_UP)) > 0.96 ? WORLD_FORWARD : WORLD_UP;
+
+    this.sunShadowRight.crossVectors(referenceUp, viewDirection).normalize();
+    this.sunShadowUp.crossVectors(viewDirection, this.sunShadowRight).normalize();
+    this.sunShadowCenter.copy(center);
+
+    const offsetX = this.sunShadowCenter.dot(this.sunShadowRight);
+    const offsetY = this.sunShadowCenter.dot(this.sunShadowUp);
+    const snappedX = Math.round(offsetX / texelSize) * texelSize;
+    const snappedY = Math.round(offsetY / texelSize) * texelSize;
+
+    this.sunShadowCenter
+      .addScaledVector(this.sunShadowRight, snappedX - offsetX)
+      .addScaledVector(this.sunShadowUp, snappedY - offsetY);
+
+    return this.sunShadowCenter;
   }
 }
 

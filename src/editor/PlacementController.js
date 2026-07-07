@@ -148,6 +148,7 @@ export class PlacementController {
         generationWeight: pack.generationWeight ?? 1,
         trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
         personForwardAxis: pack.personForwardAxis ?? 'z',
+        personGender: pack.personGender ?? 'neutral',
         animations: gltf.animations,
       };
     });

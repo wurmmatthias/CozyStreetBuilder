@@ -11,6 +11,13 @@ const CAR_Y_OFFSET = 0.04;
 const MIN_SPAWN_INTERVAL = 0.6;
 const MAX_SPAWN_INTERVAL = 1.8;
 const DESPAWN_AFTER_IDLE = 0.2;
+const TRAFFIC_LOOKAHEAD_DISTANCE = 1.65;
+const TRAFFIC_STOP_DISTANCE = 0.78;
+const TRAFFIC_BRAKE_BUFFER = 0.08;
+const TRAFFIC_LANE_CLEARANCE = 0.48;
+const TRAFFIC_SPAWN_CLEARANCE = 1.15;
+const TRAFFIC_DANGER_DISTANCE = 0.52;
+const TRAFFIC_STUCK_DESPAWN_TIME = 8;
 const POLICE_DETAIN_DISTANCE = 1.35;
 const POLICE_DESPAWN_AFTER_IDLE = 2.5;
 const POLICE_EXIT_DISTANCE = ROAD_CELL_SIZE * 1.8;
@@ -45,6 +52,7 @@ export class TrafficController {
     this.density = DEFAULT_TRAFFIC_DENSITY;
     this.needsRoadSync = true;
     this.placed = [];
+    this.nextTrafficId = 1;
 
     this.update = this.update.bind(this);
     this.sceneManager.addUpdater(this.update);
@@ -159,9 +167,14 @@ export class TrafficController {
     const from = lanePoint(spawn.cell, spawn.direction);
     const to = lanePoint(nextCell, spawn.direction);
     const spawnProgress = Math.random() * 0.28;
+    const spawnPosition = new THREE.Vector3().lerpVectors(from, to, spawnProgress);
+
+    if (this.isTrafficSpawnBlocked(spawnPosition)) {
+      return;
+    }
 
     object.userData.trafficCar = true;
-    object.position.lerpVectors(from, to, spawnProgress);
+    object.position.copy(spawnPosition);
     object.rotation.y = getTravelRotation(from, to, asset);
     this.sceneManager.add(object);
 
@@ -176,7 +189,10 @@ export class TrafficController {
       progress: spawnProgress,
       speed: 1.25 + Math.random() * 0.7,
       idleTime: 0,
+      stuckTime: 0,
+      trafficId: this.nextTrafficId,
     });
+    this.nextTrafficId += 1;
   }
 
   dispatchPoliceToPerson(person, callbacks = {}) {
@@ -223,7 +239,9 @@ export class TrafficController {
       progress: 0,
       speed: 2.55,
       idleTime: 0,
+      trafficId: this.nextTrafficId,
     });
+    this.nextTrafficId += 1;
     callbacks.onStatusChange?.('Police en route.');
     return true;
   }
@@ -276,7 +294,9 @@ export class TrafficController {
       idleTime: 0,
       serviceTime: 0,
       extinguished: false,
+      trafficId: this.nextTrafficId,
     });
+    this.nextTrafficId += 1;
     callbacks.onStatusChange?.('Fire truck en route.');
     return true;
   }
@@ -372,8 +392,16 @@ export class TrafficController {
 
   advanceCar(car, delta) {
     let remainingTravel = car.speed * delta;
+    let blockedByTraffic = false;
 
     while (remainingTravel > 0) {
+      remainingTravel = this.getTrafficAdjustedTravel(car, remainingTravel);
+
+      if (remainingTravel <= 0) {
+        blockedByTraffic = true;
+        break;
+      }
+
       const currentRoad = this.roadMap.get(cellKey(car.cell));
       const nextRoad = this.roadMap.get(cellKey(car.nextCell));
 
@@ -410,6 +438,13 @@ export class TrafficController {
     car.object.position.lerpVectors(car.from, car.to, THREE.MathUtils.clamp(car.progress, 0, 1));
     car.object.rotation.y = getTravelRotation(car.from, car.to, car.asset);
     car.idleTime = 0;
+
+    if (blockedByTraffic) {
+      car.stuckTime += delta;
+      return car.stuckTime < TRAFFIC_STUCK_DESPAWN_TIME;
+    }
+
+    car.stuckTime = 0;
     return true;
   }
 
@@ -434,6 +469,12 @@ export class TrafficController {
     let remainingTravel = dispatch.speed * delta;
 
     while (remainingTravel > 0) {
+      remainingTravel = this.getTrafficAdjustedTravel(dispatch, remainingTravel);
+
+      if (remainingTravel <= 0) {
+        break;
+      }
+
       let currentRoad = this.roadMap.get(cellKey(dispatch.cell));
       let nextRoad = this.roadMap.get(cellKey(dispatch.nextCell));
 
@@ -542,6 +583,12 @@ export class TrafficController {
     let remainingTravel = dispatch.speed * delta;
 
     while (remainingTravel > 0) {
+      remainingTravel = this.getTrafficAdjustedTravel(dispatch, remainingTravel);
+
+      if (remainingTravel <= 0) {
+        break;
+      }
+
       let currentRoad = this.roadMap.get(cellKey(dispatch.cell));
       let nextRoad = this.roadMap.get(cellKey(dispatch.nextCell));
 
@@ -737,6 +784,112 @@ export class TrafficController {
       const neighbor = this.roadMap.get(cellKey(getNeighborCell(road, direction)));
       return neighbor && canTravel(road, neighbor, direction);
     });
+  }
+
+  getTrafficAdjustedTravel(vehicle, desiredTravel) {
+    if (desiredTravel <= 0) {
+      return 0;
+    }
+
+    const blocker = this.findTrafficBlocker(vehicle);
+
+    if (!blocker) {
+      return desiredTravel;
+    }
+
+    const availableDistance = blocker.distance - TRAFFIC_STOP_DISTANCE;
+
+    if (availableDistance <= 0) {
+      return 0;
+    }
+
+    const brakingRange = TRAFFIC_LOOKAHEAD_DISTANCE - TRAFFIC_STOP_DISTANCE;
+    const speedFactor = THREE.MathUtils.clamp(availableDistance / brakingRange, 0, 1);
+    const cappedTravel = Math.max(availableDistance - TRAFFIC_BRAKE_BUFFER, 0);
+
+    return Math.min(desiredTravel * speedFactor, cappedTravel);
+  }
+
+  findTrafficBlocker(vehicle) {
+    const position = getVehiclePosition(vehicle);
+    const forward = getDirectionVector(vehicle.direction);
+    let closest = null;
+
+    this.getActiveVehicles().forEach((otherVehicle) => {
+      if (otherVehicle === vehicle) {
+        return;
+      }
+
+      const offset = new THREE.Vector3().subVectors(getVehiclePosition(otherVehicle), position);
+      const forwardDistance = offset.dot(forward);
+
+      if (forwardDistance <= 0 || forwardDistance > TRAFFIC_LOOKAHEAD_DISTANCE) {
+        return;
+      }
+
+      const lateralDistanceSq = offset.lengthSq() - forwardDistance * forwardDistance;
+
+      if (lateralDistanceSq > TRAFFIC_LANE_CLEARANCE * TRAFFIC_LANE_CLEARANCE) {
+        return;
+      }
+
+      const sameLane = otherVehicle.direction === vehicle.direction;
+
+      if (!sameLane && !this.shouldYieldToCrossTraffic(vehicle, otherVehicle, forwardDistance)) {
+        return;
+      }
+
+      if (!closest || forwardDistance < closest.distance) {
+        closest = { vehicle: otherVehicle, distance: forwardDistance };
+      }
+    });
+
+    return closest;
+  }
+
+  shouldYieldToCrossTraffic(vehicle, otherVehicle, forwardDistance) {
+    if (forwardDistance <= TRAFFIC_DANGER_DISTANCE) {
+      return true;
+    }
+
+    const vehicleInIntersection = this.isVehicleInIntersection(vehicle);
+    const otherInIntersection = this.isVehicleInIntersection(otherVehicle);
+
+    if (otherInIntersection && !vehicleInIntersection) {
+      return true;
+    }
+
+    if (vehicleInIntersection && !otherInIntersection) {
+      return false;
+    }
+
+    return !hasTrafficPriority(vehicle, otherVehicle);
+  }
+
+  isVehicleInIntersection(vehicle) {
+    const currentRoad = this.roadMap.get(cellKey(vehicle.cell));
+    const nextRoad = this.roadMap.get(cellKey(vehicle.nextCell));
+
+    return (
+      (currentRoad?.connections.length >= 3 && vehicle.progress < 0.58) ||
+      (nextRoad?.connections.length >= 3 && vehicle.progress > 0.42)
+    );
+  }
+
+  isTrafficSpawnBlocked(position) {
+    const clearanceSq = TRAFFIC_SPAWN_CLEARANCE * TRAFFIC_SPAWN_CLEARANCE;
+
+    return this.getActiveVehicles().some((vehicle) => (
+      vehicle.object.position.distanceToSquared(position) < clearanceSq
+    ));
+  }
+
+  getActiveVehicles() {
+    return [
+      ...this.cars,
+      ...this.policeDispatches.filter((dispatch) => dispatch.phase !== 'leaving'),
+      ...this.fireDispatches.filter((dispatch) => dispatch.phase !== 'servicing' && dispatch.phase !== 'leaving'),
+    ];
   }
 
   choosePoliceDirection(road, currentDirection, person) {
@@ -1219,6 +1372,41 @@ function getFireHoseEndpoints(dispatch) {
 
 function cellToPosition(cell) {
   return new THREE.Vector3(cell.x * ROAD_CELL_SIZE, 0, cell.z * ROAD_CELL_SIZE);
+}
+
+function getVehiclePosition(vehicle) {
+  if (vehicle?.from && vehicle?.to) {
+    return new THREE.Vector3().lerpVectors(
+      vehicle.from,
+      vehicle.to,
+      THREE.MathUtils.clamp(vehicle.progress ?? 0, 0, 1),
+    );
+  }
+
+  return vehicle.object.position.clone();
+}
+
+function hasTrafficPriority(vehicle, otherVehicle) {
+  const vehicleEmergencyPriority = getEmergencyPriority(vehicle);
+  const otherEmergencyPriority = getEmergencyPriority(otherVehicle);
+
+  if (vehicleEmergencyPriority !== otherEmergencyPriority) {
+    return vehicleEmergencyPriority > otherEmergencyPriority;
+  }
+
+  return (vehicle.trafficId ?? Infinity) < (otherVehicle.trafficId ?? Infinity);
+}
+
+function getEmergencyPriority(vehicle) {
+  if (vehicle.object?.userData?.fireDispatch) {
+    return 2;
+  }
+
+  if (vehicle.object?.userData?.policeDispatch) {
+    return 1;
+  }
+
+  return 0;
 }
 
 function getRoadPieceConnections(object) {

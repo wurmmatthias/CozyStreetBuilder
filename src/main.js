@@ -59,18 +59,38 @@ app.innerHTML = `
           </div>
         </button>
         <div class="day-night-panel" id="day-night-panel" hidden>
-          <button id="set-day-time" type="button" title="Set day">
-            <i class="fa-solid fa-sun" aria-hidden="true"></i>
-            <span>Day</span>
-          </button>
-          <button id="set-night-time" type="button" title="Set night">
-            <i class="fa-solid fa-moon" aria-hidden="true"></i>
-            <span>Night</span>
-          </button>
-          <button id="pause-time" type="button" title="Pause time">
-            <i class="fa-solid fa-pause" id="pause-time-icon" aria-hidden="true"></i>
-            <span id="pause-time-label">Pause</span>
-          </button>
+          <div class="clock-action-grid" role="group" aria-label="Clock controls">
+            <button id="set-day-time" type="button" title="Set day">
+              <i class="fa-solid fa-sun" aria-hidden="true"></i>
+              <span>Day</span>
+            </button>
+            <button id="set-night-time" type="button" title="Set night">
+              <i class="fa-solid fa-moon" aria-hidden="true"></i>
+              <span>Night</span>
+            </button>
+            <button id="pause-time" type="button" title="Pause time">
+              <i class="fa-solid fa-pause" id="pause-time-icon" aria-hidden="true"></i>
+              <span id="pause-time-label">Pause</span>
+            </button>
+          </div>
+          <div class="weather-action-grid" role="group" aria-label="Weather controls">
+            <button id="weather-sunny" type="button" title="Set sunny weather">
+              <i class="fa-solid fa-sun" aria-hidden="true"></i>
+              <span>Sunny</span>
+            </button>
+            <button id="weather-rain" type="button" title="Set rain">
+              <i class="fa-solid fa-cloud-rain" aria-hidden="true"></i>
+              <span>Rain</span>
+            </button>
+            <button id="weather-snow" type="button" title="Set snow">
+              <i class="fa-solid fa-snowflake" aria-hidden="true"></i>
+              <span>Snow</span>
+            </button>
+            <button id="weather-random" type="button" title="Random weather from the clock">
+              <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
+              <span>Random</span>
+            </button>
+          </div>
         </div>
 
         <section class="game-window command-window" data-window="command" aria-label="Command window">
@@ -358,6 +378,12 @@ const setNightTime = document.querySelector('#set-night-time');
 const pauseTime = document.querySelector('#pause-time');
 const pauseTimeIcon = document.querySelector('#pause-time-icon');
 const pauseTimeLabel = document.querySelector('#pause-time-label');
+const weatherButtons = {
+  sunny: document.querySelector('#weather-sunny'),
+  rain: document.querySelector('#weather-rain'),
+  snow: document.querySelector('#weather-snow'),
+  random: document.querySelector('#weather-random'),
+};
 const startSandbox = document.querySelector('#start-sandbox');
 const menuOptions = document.querySelector('#menu-options');
 const menuOptionsPanel = document.querySelector('#menu-options-panel');
@@ -662,6 +688,22 @@ setNightTime.addEventListener('click', () => {
 pauseTime.addEventListener('click', () => {
   scene.toggleTimePaused();
 });
+weatherButtons.sunny.addEventListener('click', () => {
+  scene.setWeather('sunny');
+  setDayNightPanelOpen(false);
+});
+weatherButtons.rain.addEventListener('click', () => {
+  scene.setWeather('rain');
+  setDayNightPanelOpen(false);
+});
+weatherButtons.snow.addEventListener('click', () => {
+  scene.setWeather('snow');
+  setDayNightPanelOpen(false);
+});
+weatherButtons.random.addEventListener('click', () => {
+  scene.setRandomWeather();
+  setDayNightPanelOpen(false);
+});
 document.addEventListener('click', (event) => {
   if (event.target.closest('.day-night-clock') || event.target.closest('.day-night-panel')) {
     return;
@@ -686,17 +728,56 @@ if (!document.fullscreenEnabled) {
 
 setFullscreenButtonState(Boolean(document.fullscreenElement));
 setMusicMuted(true);
+let currentClockState = {
+  clockLabel: '08:00',
+  period: 'Sunlit',
+  isPaused: false,
+};
+let currentWeatherState = {
+  weather: 'sunny',
+  label: 'Sunny',
+  isAuto: false,
+};
+
+function getWeatherReadout() {
+  return currentWeatherState.isAuto ? `Random ${currentWeatherState.label}` : currentWeatherState.label;
+}
+
+function updateClockReadout() {
+  const weatherReadout = getWeatherReadout();
+  fictionalClockPeriod.textContent = `${currentClockState.isPaused ? 'Paused' : currentClockState.period} / ${weatherReadout}`;
+  dayNightClock.setAttribute(
+    'aria-label',
+    `Time ${currentClockState.clockLabel}, ${currentClockState.isPaused ? 'paused' : currentClockState.period}, ${weatherReadout}`,
+  );
+}
+
 scene.onDayNightChange(({ clockLabel, period, isNight, isPaused }) => {
+  currentClockState = { clockLabel, period, isPaused };
   fictionalClockTime.textContent = clockLabel;
   fictionalClockTime.setAttribute('datetime', clockLabel);
-  fictionalClockPeriod.textContent = isPaused ? 'Paused' : period;
   dayNightClock.classList.toggle('is-night', isNight);
   dayNightClock.classList.toggle('is-paused', isPaused);
   dayNightClockIcon.className = isNight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
   pauseTimeIcon.className = isPaused ? 'fa-solid fa-play' : 'fa-solid fa-pause';
   pauseTimeLabel.textContent = isPaused ? 'Resume' : 'Pause';
   pauseTime.title = isPaused ? 'Resume time' : 'Pause time';
-  dayNightClock.setAttribute('aria-label', `Time ${clockLabel}, ${isPaused ? 'paused' : period}`);
+  updateClockReadout();
+});
+
+scene.onWeatherChange((weatherState) => {
+  currentWeatherState = weatherState;
+
+  Object.entries(weatherButtons).forEach(([weather, button]) => {
+    const isActive = weather === 'random'
+      ? weatherState.isAuto
+      : !weatherState.isAuto && weatherState.weather === weather;
+
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+
+  updateClockReadout();
 });
 
 if (compactUiQuery.matches) {

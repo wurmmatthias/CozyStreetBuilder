@@ -19,6 +19,19 @@ const SUN_SHADOW_HALF_SIZE = 32;
 const SUN_SHADOW_MAP_SIZE = 4096;
 const SUN_SHADOW_CAMERA_NEAR = 1;
 const SUN_SHADOW_CAMERA_FAR = 96;
+const WEATHER_RANDOM_STEP_MINUTES = 180;
+const RAIN_DROP_COUNT = 720;
+const SNOW_FLAKE_COUNT = 480;
+const SNOW_GROUND_ACCUMULATION_SECONDS = 22;
+const SNOW_GROUND_MELT_SECONDS = 14;
+const WEATHER_FIELD_HALF_WIDTH = 58;
+const WEATHER_MIN_HEIGHT = 3.5;
+const WEATHER_MAX_HEIGHT = 32;
+const WEATHER_LABELS = {
+  sunny: 'Sunny',
+  rain: 'Rain',
+  snow: 'Snow',
+};
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
 
@@ -39,9 +52,14 @@ export class SceneManager {
     this.streetlightActivationClock = 0;
     this.streetlightUpdateAccumulator = 0;
     this.dayNightSubscribers = new Set();
+    this.weatherSubscribers = new Set();
     this.fictionalMinutes = 8 * 60;
     this.isTimePaused = false;
     this.lastClockStep = -1;
+    this.weather = 'sunny';
+    this.isWeatherAuto = false;
+    this.lastWeatherSlot = -1;
+    this.snowGroundAmount = 0;
     this.dayNightState = null;
     this.skyDayColor = new THREE.Color('#8fd0ee');
     this.skyNightColor = new THREE.Color('#15213c');
@@ -49,6 +67,12 @@ export class SceneManager {
     this.fogNightColor = new THREE.Color('#192847');
     this.groundDayColor = new THREE.Color('#74b85b');
     this.groundNightColor = new THREE.Color('#2f5645');
+    this.skyRainColor = new THREE.Color('#7fa9bd');
+    this.skySnowColor = new THREE.Color('#cfe8f0');
+    this.fogRainColor = new THREE.Color('#94aeba');
+    this.fogSnowColor = new THREE.Color('#dbeff2');
+    this.groundRainColor = new THREE.Color('#4f8063');
+    this.groundSnowColor = new THREE.Color('#dceee9');
     this.windowGlowColor = new THREE.Color('#ffd978');
     this.streetlightGlowColor = new THREE.Color('#ffd18a');
     this.sunDirection = new THREE.Vector3(14, 24, 10).normalize();
@@ -56,6 +80,9 @@ export class SceneManager {
     this.sunShadowRight = new THREE.Vector3();
     this.sunShadowUp = new THREE.Vector3();
     this.sunShadowView = new THREE.Vector3();
+    this.weatherSkyColor = new THREE.Color();
+    this.weatherFogColor = new THREE.Color();
+    this.weatherGroundColor = new THREE.Color();
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -78,8 +105,10 @@ export class SceneManager {
     this.scene.add(this.ground, this.grid);
     this.addLighting();
     this.addClouds();
+    this.addWeatherSystem();
     this.updateDayNightCycle(0);
     this.addUpdater((delta) => this.updateDayNightCycle(delta));
+    this.addUpdater((delta, now) => this.updateWeather(delta, now));
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
@@ -158,20 +187,51 @@ export class SceneManager {
       this.fictionalMinutes = (this.fictionalMinutes + delta * minutesPerSecond) % (24 * 60);
     }
 
+    this.updateAutomaticWeather();
+
     const dayProgress = this.fictionalMinutes / (24 * 60);
     const sunHeight = Math.sin((dayProgress - 0.25) * Math.PI * 2);
     const daylight = smoothstep(-0.08, 0.3, sunHeight);
     const nightFactor = 1 - smoothstep(-0.22, 0.14, sunHeight);
     const sunAngle = dayProgress * Math.PI * 2;
     const clockStep = Math.floor(this.fictionalMinutes / CLOCK_STEP_MINUTES);
+    const weatherDimming = this.weather === 'rain' ? 0.74 : this.weather === 'snow' ? 0.86 : 1;
+    const snowGroundTarget = this.weather === 'snow' ? 1 : 0;
+    const snowGroundDuration = snowGroundTarget > this.snowGroundAmount
+      ? SNOW_GROUND_ACCUMULATION_SECONDS
+      : SNOW_GROUND_MELT_SECONDS;
 
-    this.scene.background.copy(this.skyDayColor).lerp(this.skyNightColor, nightFactor);
-    this.scene.fog.color.copy(this.fogDayColor).lerp(this.fogNightColor, nightFactor);
-    this.ground.material.color.copy(this.groundDayColor).lerp(this.groundNightColor, nightFactor);
+    if (delta > 0 || snowGroundTarget === 0) {
+      this.snowGroundAmount = THREE.MathUtils.damp(
+        this.snowGroundAmount,
+        snowGroundTarget,
+        4 / snowGroundDuration,
+        delta,
+      );
+    }
+
+    this.weatherSkyColor.copy(this.skyDayColor).lerp(this.skyNightColor, nightFactor);
+    this.weatherFogColor.copy(this.fogDayColor).lerp(this.fogNightColor, nightFactor);
+    this.weatherGroundColor.copy(this.groundDayColor).lerp(this.groundNightColor, nightFactor);
+
+    if (this.weather === 'rain') {
+      this.weatherSkyColor.lerp(this.skyRainColor, 0.44);
+      this.weatherFogColor.lerp(this.fogRainColor, 0.5);
+      this.weatherGroundColor.lerp(this.groundRainColor, 0.34);
+    } else if (this.weather === 'snow') {
+      this.weatherSkyColor.lerp(this.skySnowColor, 0.36);
+      this.weatherFogColor.lerp(this.fogSnowColor, 0.52);
+    }
+
+    this.weatherGroundColor.lerp(this.groundSnowColor, this.snowGroundAmount * 0.82);
+
+    this.scene.background.copy(this.weatherSkyColor);
+    this.scene.fog.color.copy(this.weatherFogColor);
+    this.ground.material.color.copy(this.weatherGroundColor);
     this.grid.material.opacity = THREE.MathUtils.lerp(0.24, 0.5, daylight);
 
-    this.hemiLight.intensity = THREE.MathUtils.lerp(0.28, 2.25, daylight);
-    this.sunLight.intensity = THREE.MathUtils.lerp(0.04, 3.35, daylight);
+    this.hemiLight.intensity = THREE.MathUtils.lerp(0.28, 2.25, daylight) * weatherDimming;
+    this.sunLight.intensity = THREE.MathUtils.lerp(0.04, 3.35, daylight) * weatherDimming;
     this.sunDirection.set(
       Math.cos(sunAngle) * 22,
       THREE.MathUtils.lerp(2, 26, Math.max(sunHeight, 0)),
@@ -237,6 +297,131 @@ export class SceneManager {
     }
 
     return () => this.dayNightSubscribers.delete(callback);
+  }
+
+  addWeatherSystem() {
+    this.weatherGroup = new THREE.Group();
+    this.weatherGroup.name = 'Weather';
+    this.rainSystem = createPrecipitationSystem({
+      count: RAIN_DROP_COUNT,
+      color: '#b7ddff',
+      size: 0.08,
+      opacity: 0.66,
+      speedRange: [18, 28],
+      slantRange: [2.1, 3.4],
+    });
+    this.snowSystem = createPrecipitationSystem({
+      count: SNOW_FLAKE_COUNT,
+      color: '#ffffff',
+      size: 0.18,
+      opacity: 0.84,
+      speedRange: [1.4, 3.1],
+      slantRange: [-0.25, 0.25],
+      phaseRange: [0, Math.PI * 2],
+    });
+
+    this.rainSystem.points.name = 'Rain';
+    this.snowSystem.points.name = 'Snow';
+    this.rainSystem.points.visible = false;
+    this.snowSystem.points.visible = false;
+    this.weatherGroup.add(this.rainSystem.points, this.snowSystem.points);
+    this.scene.add(this.weatherGroup);
+  }
+
+  updateWeather(delta, now) {
+    if (!this.weatherGroup || this.weather === 'sunny') {
+      return;
+    }
+
+    this.weatherGroup.position.x = this.controls.target.x;
+    this.weatherGroup.position.z = this.controls.target.z;
+
+    if (this.weather === 'rain') {
+      updateRainSystem(this.rainSystem, delta);
+    } else if (this.weather === 'snow') {
+      updateSnowSystem(this.snowSystem, delta, now / 1000);
+    }
+  }
+
+  setWeather(weather) {
+    this.isWeatherAuto = false;
+    this.applyWeather(weather);
+  }
+
+  setRandomWeather() {
+    this.isWeatherAuto = true;
+    this.lastWeatherSlot = Math.floor(this.fictionalMinutes / WEATHER_RANDOM_STEP_MINUTES);
+    this.applyWeather(this.pickRandomWeather());
+  }
+
+  updateAutomaticWeather() {
+    if (!this.isWeatherAuto) {
+      return;
+    }
+
+    const weatherSlot = Math.floor(this.fictionalMinutes / WEATHER_RANDOM_STEP_MINUTES);
+
+    if (weatherSlot === this.lastWeatherSlot) {
+      return;
+    }
+
+    this.lastWeatherSlot = weatherSlot;
+    this.applyWeather(this.pickRandomWeather(), false);
+  }
+
+  applyWeather(weather, updateEnvironment = true) {
+    const nextWeather = normalizeWeather(weather);
+
+    if (nextWeather === this.weather) {
+      this.notifyWeatherChange();
+      return;
+    }
+
+    this.weather = nextWeather;
+
+    if (this.rainSystem && this.snowSystem) {
+      this.rainSystem.points.visible = nextWeather === 'rain';
+      this.snowSystem.points.visible = nextWeather === 'snow';
+    }
+
+    if (updateEnvironment) {
+      this.updateDayNightCycle(0);
+    }
+
+    this.notifyWeatherChange();
+  }
+
+  pickRandomWeather() {
+    const roll = Math.random();
+
+    if (roll < 0.56) {
+      return 'sunny';
+    }
+
+    if (roll < 0.8) {
+      return 'rain';
+    }
+
+    return 'snow';
+  }
+
+  createWeatherState() {
+    return {
+      weather: this.weather,
+      label: WEATHER_LABELS[this.weather],
+      isAuto: this.isWeatherAuto,
+    };
+  }
+
+  notifyWeatherChange() {
+    const state = this.createWeatherState();
+    this.weatherSubscribers.forEach((subscriber) => subscriber(state));
+  }
+
+  onWeatherChange(callback) {
+    this.weatherSubscribers.add(callback);
+    callback(this.createWeatherState());
+    return () => this.weatherSubscribers.delete(callback);
   }
 
   updateWindowGlow(nightFactor) {
@@ -804,6 +989,115 @@ function isWindowMaterial(mesh, material) {
 
   return !/(frame|border|trim|door|roof|wall)/.test(materialName)
     && !/(frame|border|trim)/.test(meshName);
+}
+
+function createPrecipitationSystem({
+  count,
+  color,
+  size,
+  opacity,
+  speedRange,
+  slantRange,
+  phaseRange = [0, 0],
+}) {
+  const positions = new Float32Array(count * 3);
+  const speeds = new Float32Array(count);
+  const slants = new Float32Array(count);
+  const phases = new Float32Array(count);
+
+  for (let index = 0; index < count; index += 1) {
+    resetWeatherParticle(positions, index);
+    speeds[index] = randomFloat(speedRange[0], speedRange[1]);
+    slants[index] = randomFloat(slantRange[0], slantRange[1]);
+    phases[index] = randomFloat(phaseRange[0], phaseRange[1]);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
+
+  const material = new THREE.PointsMaterial({
+    color,
+    size,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+
+  return {
+    points,
+    positions,
+    speeds,
+    slants,
+    phases,
+    count,
+  };
+}
+
+function updateRainSystem(system, delta) {
+  const { positions, speeds, slants, count } = system;
+
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 3;
+    positions[offset] += slants[index] * delta;
+    positions[offset + 1] -= speeds[index] * delta;
+
+    if (positions[offset + 1] < WEATHER_MIN_HEIGHT) {
+      resetWeatherParticle(positions, index, WEATHER_MAX_HEIGHT);
+    }
+
+    wrapWeatherParticle(positions, offset);
+  }
+
+  system.points.geometry.attributes.position.needsUpdate = true;
+}
+
+function updateSnowSystem(system, delta, time) {
+  const { positions, speeds, slants, phases, count } = system;
+
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 3;
+    const sway = Math.sin(time * 0.9 + phases[index]) * 0.72;
+    positions[offset] += (slants[index] + sway) * delta;
+    positions[offset + 1] -= speeds[index] * delta;
+    positions[offset + 2] += Math.cos(time * 0.62 + phases[index]) * 0.2 * delta;
+
+    if (positions[offset + 1] < WEATHER_MIN_HEIGHT) {
+      resetWeatherParticle(positions, index, WEATHER_MAX_HEIGHT);
+    }
+
+    wrapWeatherParticle(positions, offset);
+  }
+
+  system.points.geometry.attributes.position.needsUpdate = true;
+}
+
+function resetWeatherParticle(positions, index, height = randomFloat(WEATHER_MIN_HEIGHT, WEATHER_MAX_HEIGHT)) {
+  const offset = index * 3;
+  positions[offset] = randomFloat(-WEATHER_FIELD_HALF_WIDTH, WEATHER_FIELD_HALF_WIDTH);
+  positions[offset + 1] = height;
+  positions[offset + 2] = randomFloat(-WEATHER_FIELD_HALF_WIDTH, WEATHER_FIELD_HALF_WIDTH);
+}
+
+function wrapWeatherParticle(positions, offset) {
+  if (positions[offset] > WEATHER_FIELD_HALF_WIDTH) {
+    positions[offset] = -WEATHER_FIELD_HALF_WIDTH;
+  } else if (positions[offset] < -WEATHER_FIELD_HALF_WIDTH) {
+    positions[offset] = WEATHER_FIELD_HALF_WIDTH;
+  }
+
+  if (positions[offset + 2] > WEATHER_FIELD_HALF_WIDTH) {
+    positions[offset + 2] = -WEATHER_FIELD_HALF_WIDTH;
+  } else if (positions[offset + 2] < -WEATHER_FIELD_HALF_WIDTH) {
+    positions[offset + 2] = WEATHER_FIELD_HALF_WIDTH;
+  }
+}
+
+function normalizeWeather(weather) {
+  return Object.hasOwn(WEATHER_LABELS, weather) ? weather : 'sunny';
 }
 
 function randomFloat(min, max) {

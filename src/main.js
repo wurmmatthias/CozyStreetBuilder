@@ -7,7 +7,7 @@ import { assetPacks } from './editor/assetCatalog.js';
 const app = document.querySelector('#app');
 
 app.innerHTML = `
-  <main class="builder-shell" data-mode="build" data-screen="menu" data-ui="expanded">
+  <main class="builder-shell" data-mode="build" data-play-mode="sandbox" data-screen="menu" data-ui="expanded">
     <section class="viewport-wrap">
       <div id="viewport" class="viewport" aria-label="3D street builder viewport"></div>
 
@@ -15,8 +15,12 @@ app.innerHTML = `
         <div class="main-menu-content">
           <h1 class="main-menu-title">Cozy Street Builder</h1>
           <div class="main-menu-box" aria-label="Main menu actions">
-            <button class="main-menu-button primary" id="start-sandbox" type="button">
+            <button class="main-menu-button primary" id="start-normal" type="button">
               <i class="fa-solid fa-play" aria-hidden="true"></i>
+              <span>Play Normal Mode</span>
+            </button>
+            <button class="main-menu-button" id="start-sandbox" type="button">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
               <span>Sandbox Mode</span>
             </button>
             <button class="main-menu-button" id="menu-options" type="button" aria-expanded="false" aria-controls="menu-options-panel">
@@ -105,7 +109,7 @@ app.innerHTML = `
           <div class="window-body">
             <div class="mode-toggle" role="group" aria-label="Editor mode">
               <button class="is-active" id="build-mode" type="button">Build</button>
-              <button id="generate-mode" type="button">Generate</button>
+              <button class="generation-entry" id="generate-mode" type="button">Generate</button>
               <button id="view-mode" type="button">View</button>
             </div>
 
@@ -186,7 +190,7 @@ app.innerHTML = `
           </div>
         </section>
 
-        <section class="game-window generate-window generate-only" data-window="generate" aria-label="Generate window">
+        <section class="game-window generate-window generate-only generation-entry" data-window="generate" aria-label="Generate window">
           <header class="window-titlebar" data-drag-handle>
             <div>
               <p class="eyebrow">World Bake</p>
@@ -231,6 +235,39 @@ app.innerHTML = `
             </dl>
           </div>
         </section>
+
+        <aside class="economy-hud normal-only" id="economy-hud" aria-label="Town economy">
+          <div class="economy-topline">
+            <div>
+              <span class="economy-kicker">Town Funds</span>
+              <strong id="economy-balance">$2,500</strong>
+            </div>
+            <div class="tax-income" aria-label="Tax income">
+              <span>Next taxes</span>
+              <strong id="tax-income">+$0</strong>
+            </div>
+          </div>
+          <label class="tax-control" for="tax-rate">
+            <span>Tax rate</span>
+            <input id="tax-rate" type="range" min="0" max="20" value="8" step="1" />
+            <output id="tax-rate-value">8%</output>
+          </label>
+          <div class="happiness-block">
+            <div class="happiness-heading">
+              <span><i class="fa-solid fa-face-smile" aria-hidden="true"></i> Happiness</span>
+              <strong id="happiness-value">54%</strong>
+            </div>
+            <div class="happiness-track" role="progressbar" aria-label="Town happiness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="54">
+              <span id="happiness-fill"></span>
+            </div>
+            <div class="happiness-factors" aria-label="Happiness factors">
+              <span title="Lower taxes improve happiness"><i class="fa-solid fa-coins" aria-hidden="true"></i> Taxes <strong id="tax-happiness-score">68</strong></span>
+              <span title="More plants improve happiness"><i class="fa-solid fa-leaf" aria-hidden="true"></i> Greenery <strong id="foliage-happiness-score">45</strong></span>
+              <span title="A complete road network improves happiness"><i class="fa-solid fa-road" aria-hidden="true"></i> Roads <strong id="road-happiness-score">45</strong></span>
+            </div>
+            <p id="happiness-note">Build roads and add plants to make the new town feel welcoming.</p>
+          </div>
+        </aside>
 
         <section class="game-window resident-window" data-window="resident" aria-label="Resident camera window" hidden>
           <header class="window-titlebar" data-drag-handle>
@@ -303,7 +340,7 @@ app.innerHTML = `
           <button class="dock-button dock-minimize" type="button" data-ui-toggle title="Minify interface" aria-label="Minify interface">-</button>
           <button class="dock-button" type="button" data-skill="build" data-window-open="assets" title="Build skills">Build</button>
           <button class="dock-button" type="button" data-skill="placement" data-window-open="placement" title="Edit skills">Edit</button>
-          <button class="dock-button" type="button" data-skill="generate" data-window-open="generate" title="World skills">World</button>
+          <button class="dock-button generation-entry" type="button" data-skill="generate" data-window-open="generate" title="World skills">World</button>
           <button class="dock-button" type="button" data-skill="view" data-window-open="command" title="View mode">View</button>
           <button class="dock-button" type="button" data-skill="command" data-window-open="command" title="Command console">Core</button>
         </nav>
@@ -337,6 +374,11 @@ const controller = new PlacementController(scene, {
   fireStatus: document.querySelector('#fire-status'),
   fireLocation: document.querySelector('#fire-location'),
   dispatchFireTruck: document.querySelector('#dispatch-fire-truck'),
+  canPlaceAsset: (asset) => canAffordAsset(asset, true),
+  onAssetPlaced: (asset) => purchaseAsset(asset),
+  onTownChanged: () => updateEconomyHud(),
+  getAssetPriceLabel: (asset) => getAssetPriceLabel(asset),
+  isAssetAffordable: (asset) => canAffordAsset(asset, false),
 });
 
 if (import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
@@ -385,12 +427,162 @@ const weatherButtons = {
   random: document.querySelector('#weather-random'),
 };
 const startSandbox = document.querySelector('#start-sandbox');
+const startNormal = document.querySelector('#start-normal');
 const menuOptions = document.querySelector('#menu-options');
 const menuOptionsPanel = document.querySelector('#menu-options-panel');
 const menuMusic = document.querySelector('#menu-music');
 const menuFullscreen = document.querySelector('#menu-fullscreen');
 const backgroundMusic = new Audio(assetUrl('/assets/sounds/bg.mp3'));
 let mainMenuTownActive = false;
+const economyBalance = document.querySelector('#economy-balance');
+const taxRate = document.querySelector('#tax-rate');
+const taxRateValue = document.querySelector('#tax-rate-value');
+const taxIncome = document.querySelector('#tax-income');
+const happinessValue = document.querySelector('#happiness-value');
+const happinessFill = document.querySelector('#happiness-fill');
+const happinessTrack = document.querySelector('.happiness-track');
+const happinessNote = document.querySelector('#happiness-note');
+const taxHappinessScore = document.querySelector('#tax-happiness-score');
+const foliageHappinessScore = document.querySelector('#foliage-happiness-score');
+const roadHappinessScore = document.querySelector('#road-happiness-score');
+const economyHud = document.querySelector('#economy-hud');
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const TAX_CYCLE_MS = 10000;
+let economyEnabled = false;
+let balance = 2500;
+let happiness = 54;
+let taxTimer = null;
+
+function getAssetCost(asset) {
+  return asset?.kind === 'building' ? Math.max(0, Number(asset.cost) || 0) : 0;
+}
+
+function getTownCounts() {
+  return controller.placed.reduce((counts, object) => {
+    const kind = object.userData.assetKind;
+    counts[kind] = (counts[kind] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function getTaxIncome() {
+  const buildingCount = getTownCounts().building ?? 0;
+  return Math.round(buildingCount * 25 * (Number(taxRate.value) / 10));
+}
+
+function getHappinessFactors(counts, rate) {
+  const buildingCount = counts.building ?? 0;
+  const foliageCount = counts.foliage ?? 0;
+  const roadCount = counts.road ?? 0;
+  const foliageTarget = Math.max(2, Math.ceil(buildingCount / 2));
+  const roadTarget = Math.max(4, buildingCount * 2);
+
+  return {
+    taxes: clamp(100 - rate * 4, 20, 100),
+    foliage: clamp(45 + (foliageCount / foliageTarget) * 55, 45, 100),
+    roads: clamp(45 + (roadCount / roadTarget) * 55, 45, 100),
+    foliageCount,
+    foliageTarget,
+    roadCount,
+    roadTarget,
+  };
+}
+
+function getAssetPriceLabel(asset) {
+  if (!economyEnabled) {
+    return '';
+  }
+
+  const cost = getAssetCost(asset);
+  return cost === 0 ? 'Free' : currency.format(cost);
+}
+
+function canAffordAsset(asset, showFeedback) {
+  const cost = getAssetCost(asset);
+  const affordable = !economyEnabled || cost <= balance;
+
+  if (!affordable && showFeedback) {
+    controller.elements.modeLabel.textContent = `You need ${currency.format(cost - balance)} more to build ${asset.name}.`;
+    economyHud.classList.remove('is-alerting');
+    requestAnimationFrame(() => economyHud.classList.add('is-alerting'));
+  }
+
+  return affordable;
+}
+
+function purchaseAsset(asset) {
+  if (!economyEnabled) {
+    return;
+  }
+
+  const cost = getAssetCost(asset);
+  balance -= cost;
+  controller.elements.modeLabel.textContent = cost > 0
+    ? `${asset.name} built for ${currency.format(cost)}.`
+    : `${asset.name} placed for free.`;
+  updateEconomyHud();
+}
+
+function updateEconomyHud() {
+  if (!economyBalance) {
+    return;
+  }
+
+  const rate = Number(taxRate.value);
+  const counts = getTownCounts();
+  const factors = getHappinessFactors(counts, rate);
+  happiness = factors.taxes * 0.4 + factors.foliage * 0.3 + factors.roads * 0.3;
+  const income = getTaxIncome();
+
+  economyBalance.textContent = currency.format(balance);
+  taxRateValue.value = `${rate}%`;
+  taxIncome.textContent = `+${currency.format(income)}`;
+  happinessValue.textContent = `${Math.round(happiness)}%`;
+  happinessFill.style.width = `${happiness}%`;
+  happinessTrack.setAttribute('aria-valuenow', String(Math.round(happiness)));
+  taxHappinessScore.textContent = Math.round(factors.taxes);
+  foliageHappinessScore.textContent = Math.round(factors.foliage);
+  roadHappinessScore.textContent = Math.round(factors.roads);
+
+  const weakestFactor = [
+    { score: factors.taxes, note: 'Lowering taxes would give residents more breathing room.' },
+    { score: factors.foliage, note: `Add more plants around town (${factors.foliageCount}/${factors.foliageTarget} recommended).` },
+    { score: factors.roads, note: `Expand the road network (${factors.roadCount}/${factors.roadTarget} recommended pieces).` },
+  ].sort((a, b) => a.score - b.score)[0];
+
+  happinessNote.textContent = happiness >= 90
+    ? 'Residents love the balance of taxes, greenery, and infrastructure.'
+    : weakestFactor.note;
+  economyHud.dataset.mood = happiness >= 60 ? 'happy' : happiness >= 40 ? 'uneasy' : 'unhappy';
+  controller.refreshAssetButtons();
+}
+
+function collectTaxes() {
+  if (!economyEnabled || shell.dataset.screen !== 'game') {
+    return;
+  }
+
+  const income = getTaxIncome();
+  balance += income;
+  updateEconomyHud();
+  economyHud.classList.remove('is-paying');
+  requestAnimationFrame(() => economyHud.classList.add('is-paying'));
+}
+
+function setEconomyEnabled(enabled) {
+  economyEnabled = enabled;
+  shell.dataset.playMode = enabled ? 'normal' : 'sandbox';
+  window.clearInterval(taxTimer);
+  taxTimer = null;
+
+  if (enabled) {
+    balance = 2500;
+    taxRate.value = '8';
+    taxTimer = window.setInterval(collectTaxes, TAX_CYCLE_MS);
+  }
+
+  updateEconomyHud();
+}
 
 backgroundMusic.loop = true;
 backgroundMusic.muted = true;
@@ -473,6 +665,10 @@ function enterGameMode(mode) {
 }
 
 function setMode(mode) {
+  if (economyEnabled && mode === 'generate') {
+    mode = 'build';
+  }
+
   shell.dataset.mode = mode;
   buildMode.classList.toggle('is-active', mode === 'build');
   generateMode.classList.toggle('is-active', mode === 'generate');
@@ -663,6 +859,12 @@ musicToggle.addEventListener('click', () => {
   setMusicMuted(!backgroundMusic.muted);
 });
 startSandbox.addEventListener('click', () => {
+  setEconomyEnabled(false);
+  enterGameMode('build');
+});
+startNormal.addEventListener('click', () => {
+  clearMainMenuTown();
+  setEconomyEnabled(true);
   enterGameMode('build');
 });
 menuOptions.addEventListener('click', () => {
@@ -848,6 +1050,8 @@ generateTrafficDensity.addEventListener('input', () => {
   controller.setGenerationOptions({ trafficDensity: value / 100 });
   controller.setTrafficDensity(value / 100);
 });
+
+taxRate.addEventListener('input', updateEconomyHud);
 
 document.querySelector('#rotate-left').addEventListener('click', () => controller.rotateSelected(-1));
 document.querySelector('#rotate-right').addEventListener('click', () => controller.rotateSelected(1));

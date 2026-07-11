@@ -17,6 +17,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 360,
   },
   {
     id: 'small-building',
@@ -25,6 +26,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 240,
   },
   {
     id: 'low-building',
@@ -33,6 +35,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 320,
   },
   {
     id: 'large-building',
@@ -41,6 +44,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 620,
   },
   {
     id: 'building-red',
@@ -49,6 +53,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 460,
   },
   {
     id: 'big-building',
@@ -57,6 +62,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 0.8,
     rotationStep: 90,
+    cost: 760,
     generationRole: 'midrise',
     generationWeight: 1.15,
   },
@@ -67,6 +73,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 680,
   },
   {
     id: 'pizza-corner',
@@ -75,6 +82,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 420,
   },
   {
     id: 'skyscraper',
@@ -83,6 +91,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 1200,
   },
   {
     id: 'skyscraper-2',
@@ -91,6 +100,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 1400,
   },
   {
     id: 'skyscraper-3',
@@ -99,6 +109,7 @@ export const assetPacks = [
     kind: 'building',
     scale: 1,
     rotationStep: 90,
+    cost: 1600,
   },
   {
     id: 'tree',

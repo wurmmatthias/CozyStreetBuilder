@@ -61,6 +61,11 @@ export class PlacementController {
       foliageDensity: 0.55,
       trafficDensity: 0.5,
     };
+    this.canPlaceAsset = elements.canPlaceAsset ?? (() => true);
+    this.onAssetPlaced = elements.onAssetPlaced ?? (() => {});
+    this.onTownChanged = elements.onTownChanged ?? (() => {});
+    this.getAssetPriceLabel = elements.getAssetPriceLabel ?? (() => '');
+    this.isAssetAffordable = elements.isAssetAffordable ?? (() => true);
 
     this.canvas = this.sceneManager.renderer.domElement;
     this.canvas.addEventListener('pointermove', (event) => this.onPointerMove(event));
@@ -146,6 +151,7 @@ export class PlacementController {
         showInPalette: pack.showInPalette ?? true,
         generationRole: pack.generationRole ?? null,
         generationWeight: pack.generationWeight ?? 1,
+        cost: pack.cost ?? 0,
         trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
         personForwardAxis: pack.personForwardAxis ?? 'z',
         personGender: pack.personGender ?? 'neutral',
@@ -182,13 +188,34 @@ export class PlacementController {
         button.dataset.assetId = asset.id;
         button.innerHTML = `
           ${thumbnail ? `<span class="asset-preview"><img src="${thumbnail}" alt="" draggable="false" /></span>` : `<span class="asset-thumb asset-thumb--${asset.kind}"></span>`}
-          <span>${asset.name}</span>
+          <span class="asset-copy"><span>${asset.name}</span><span class="asset-price"></span></span>
         `;
         button.addEventListener('click', () => this.chooseAsset(asset.id));
         grid.append(button);
       });
 
       this.elements.assetGrid.append(section);
+    });
+
+    this.refreshAssetButtons();
+  }
+
+  refreshAssetButtons() {
+    this.elements.assetGrid.querySelectorAll('.asset-button').forEach((button) => {
+      const asset = this.assets.find((item) => item.id === button.dataset.assetId);
+
+      if (!asset) {
+        return;
+      }
+
+      const affordable = this.isAssetAffordable(asset);
+      const price = button.querySelector('.asset-price');
+      button.classList.toggle('is-unaffordable', !affordable);
+      button.setAttribute('aria-disabled', String(!affordable));
+
+      if (price) {
+        price.textContent = this.getAssetPriceLabel(asset);
+      }
     });
   }
 
@@ -412,6 +439,10 @@ export class PlacementController {
       return;
     }
 
+    if (!this.canPlaceAsset(this.activeAsset)) {
+      return;
+    }
+
     const object = makePlaceableClone(this.activeAsset.source, this.activeAsset);
     object.position.copy(this.lastSnap);
     object.rotation.y = this.ghost.rotation.y;
@@ -420,6 +451,8 @@ export class PlacementController {
     object.userData.assetName = this.activeAsset.name;
     this.placed.push(object);
     this.sceneManager.add(object);
+    this.onAssetPlaced(this.activeAsset, object);
+    this.onTownChanged(this.placed);
     this.syncTrafficRoads();
     this.select(object);
   }
@@ -494,12 +527,18 @@ export class PlacementController {
       return;
     }
 
+    if (!this.canPlaceAsset(asset)) {
+      return;
+    }
+
     const clone = makePlaceableClone(asset.source, asset);
     clone.position.copy(this.selected.position).add(new THREE.Vector3(this.gridSize, 0, 0));
     clone.rotation.copy(this.selected.rotation);
     clone.userData.editorObject = true;
     this.placed.push(clone);
     this.sceneManager.add(clone);
+    this.onAssetPlaced(asset, clone);
+    this.onTownChanged(this.placed);
     this.syncTrafficRoads();
     this.select(clone);
   }
@@ -515,6 +554,7 @@ export class PlacementController {
     this.traffic.reset();
     this.pedestrians.reset();
     this.syncTrafficRoads();
+    this.onTownChanged(this.placed);
 
     if (this.elements.generateStatus) {
       this.elements.generateStatus.textContent = 'Ready';
@@ -696,6 +736,7 @@ export class PlacementController {
 
     this.sceneManager.remove(this.selected);
     this.placed = this.placed.filter((object) => object !== this.selected);
+    this.onTownChanged(this.placed);
     this.syncTrafficRoads();
     this.select(null);
   }

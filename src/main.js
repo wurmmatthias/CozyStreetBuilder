@@ -15,7 +15,7 @@ app.innerHTML = `
       <section class="main-menu" aria-label="Main menu">
         <div class="main-menu-content">
           <h1 class="main-menu-title">
-            <img src="/assets/branding/cozy-street-builder-logo.png" alt="Cozy Street Builder" />
+            <img src="${import.meta.env.BASE_URL}assets/branding/cozy-street-builder-logo.png" alt="Cozy Street Builder" />
           </h1>
           <div class="main-menu-box" aria-label="Main menu actions">
             <button class="main-menu-button primary" id="start-normal" type="button" disabled>

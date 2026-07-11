@@ -130,25 +130,26 @@ dd {
 .main-menu-content {
   display: grid;
   justify-items: center;
-  gap: 18px;
-  width: min(440px, calc(100vw - 32px));
+  gap: 0;
+  width: min(620px, calc(100vw - 32px));
 }
 
 .main-menu-title {
-  max-width: 10ch;
-  color: #513d33;
-  font-size: 5rem;
-  font-weight: 1000;
-  letter-spacing: 0;
-  line-height: 0.9;
-  text-align: center;
-  text-shadow:
-    0 4px 0 rgb(255 255 255 / 0.7),
-    0 12px 30px rgb(117 88 65 / 0.22);
-  -webkit-user-select: none; /* Safari */        
-  -moz-user-select: none; /* Firefox */
-  -ms-user-select: none; /* IE10+/Edge */
-  user-select: none; /* Standard */
+  width: clamp(300px, 44vw, 540px);
+  max-width: 100%;
+  max-height: 44vh;
+  margin-bottom: -18px;
+  filter: drop-shadow(0 14px 18px rgb(117 88 65 / 0.2));
+  line-height: 0;
+  user-select: none;
+}
+
+.main-menu-title img {
+  display: block;
+  width: 100%;
+  max-height: 44vh;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .main-menu-box {
@@ -1522,11 +1523,17 @@ input[type='range']::-webkit-slider-thumb {
   }
 
   .main-menu-content {
-    gap: 14px;
+    gap: 0;
   }
 
   .main-menu-title {
-    font-size: 3rem;
+    width: min(400px, 100%);
+    max-height: 34vh;
+    margin-bottom: -12px;
+  }
+
+  .main-menu-title img {
+    max-height: 34vh;
   }
 
   .main-menu-box {

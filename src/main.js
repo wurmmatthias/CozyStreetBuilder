@@ -13,7 +13,9 @@ app.innerHTML = `
 
       <section class="main-menu" aria-label="Main menu">
         <div class="main-menu-content">
-          <h1 class="main-menu-title">Cozy Street Builder</h1>
+          <h1 class="main-menu-title">
+            <img src="/assets/branding/cozy-street-builder-logo.png" alt="Cozy Street Builder" />
+          </h1>
           <div class="main-menu-box" aria-label="Main menu actions">
             <button class="main-menu-button primary" id="start-normal" type="button" disabled>
               <i class="fa-solid fa-play" aria-hidden="true"></i>

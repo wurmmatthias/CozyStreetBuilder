@@ -15,13 +15,21 @@ app.innerHTML = `
         <div class="main-menu-content">
           <h1 class="main-menu-title">Cozy Street Builder</h1>
           <div class="main-menu-box" aria-label="Main menu actions">
-            <button class="main-menu-button primary" id="start-normal" type="button">
+            <button class="main-menu-button primary" id="start-normal" type="button" disabled>
               <i class="fa-solid fa-play" aria-hidden="true"></i>
               <span>Play Normal Mode</span>
             </button>
-            <button class="main-menu-button" id="start-sandbox" type="button">
+            <button class="main-menu-button" id="start-sandbox" type="button" disabled>
               <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
               <span>Sandbox Mode</span>
+            </button>
+            <button class="main-menu-button" id="continue-town" type="button" disabled hidden>
+              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              <span>Continue Saved Town</span>
+            </button>
+            <button class="main-menu-button" id="menu-import-town" type="button" disabled>
+              <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+              <span>Load Town File</span>
             </button>
             <button class="main-menu-button" id="menu-options" type="button" aria-expanded="false" aria-controls="menu-options-panel">
               <i class="fa-solid fa-gear" aria-hidden="true"></i>
@@ -45,8 +53,47 @@ app.innerHTML = `
         </div>
       </section>
 
+      <section class="escape-overlay" id="escape-overlay" aria-label="Paused game menu" aria-modal="true" role="dialog" hidden>
+        <div class="escape-card">
+          <header class="escape-header">
+            <div>
+              <p class="eyebrow">Game paused</p>
+              <h2>Your Town</h2>
+            </div>
+            <span class="escape-key" aria-label="Escape key">Esc</span>
+          </header>
+          <p class="escape-summary" id="escape-summary">Manage this town or return to building.</p>
+          <div class="escape-actions">
+            <button class="escape-button primary" id="resume-game" type="button">
+              <i class="fa-solid fa-play" aria-hidden="true"></i><span>Resume</span>
+            </button>
+            <button class="escape-button" id="save-town" type="button">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save Town</span>
+            </button>
+            <button class="escape-button" id="export-town" type="button">
+              <i class="fa-solid fa-file-export" aria-hidden="true"></i><span>Export to File</span>
+            </button>
+            <button class="escape-button" id="load-saved-town" type="button">
+              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Load Saved Town</span>
+            </button>
+            <button class="escape-button" id="import-town" type="button">
+              <i class="fa-solid fa-file-import" aria-hidden="true"></i><span>Load from File</span>
+            </button>
+            <button class="escape-button danger" id="return-main-menu" type="button">
+              <i class="fa-solid fa-house" aria-hidden="true"></i><span>Return to Main Menu</span>
+            </button>
+          </div>
+          <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <input id="town-file-input" type="file" accept="application/json,.json,.cozytown" hidden />
+
       <div class="hud-root" aria-label="Street builder interface">
         <div class="top-right-controls" aria-label="Viewport controls">
+          <button class="hud-button escape-toggle" id="escape-toggle" type="button" aria-label="Open game menu" aria-expanded="false" aria-controls="escape-overlay" title="Game menu (Escape)">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+            <span>Menu</span>
+          </button>
           <button class="hud-button" id="fullscreen-toggle" type="button" aria-label="Enter fullscreen" title="Enter fullscreen">
             <i class="fa-solid fa-expand" id="fullscreen-toggle-icon" aria-hidden="true"></i>
           </button>
@@ -428,6 +475,8 @@ const weatherButtons = {
 };
 const startSandbox = document.querySelector('#start-sandbox');
 const startNormal = document.querySelector('#start-normal');
+const continueTown = document.querySelector('#continue-town');
+const menuImportTown = document.querySelector('#menu-import-town');
 const menuOptions = document.querySelector('#menu-options');
 const menuOptionsPanel = document.querySelector('#menu-options-panel');
 const menuMusic = document.querySelector('#menu-music');
@@ -446,9 +495,17 @@ const taxHappinessScore = document.querySelector('#tax-happiness-score');
 const foliageHappinessScore = document.querySelector('#foliage-happiness-score');
 const roadHappinessScore = document.querySelector('#road-happiness-score');
 const economyHud = document.querySelector('#economy-hud');
+const escapeOverlay = document.querySelector('#escape-overlay');
+const escapeToggle = document.querySelector('#escape-toggle');
+const escapeSummary = document.querySelector('#escape-summary');
+const saveStatus = document.querySelector('#save-status');
+const townFileInput = document.querySelector('#town-file-input');
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const TAX_CYCLE_MS = 10000;
+const TOWN_SAVE_KEY = 'cozy-street-builder:town:v1';
+const TOWN_FILE_VERSION = 1;
 let economyEnabled = false;
+let assetsReady = false;
 let balance = 2500;
 let happiness = 54;
 let taxTimer = null;
@@ -558,7 +615,7 @@ function updateEconomyHud() {
 }
 
 function collectTaxes() {
-  if (!economyEnabled || shell.dataset.screen !== 'game') {
+  if (!economyEnabled || shell.dataset.screen !== 'game' || !escapeOverlay.hidden) {
     return;
   }
 
@@ -569,19 +626,246 @@ function collectTaxes() {
   requestAnimationFrame(() => economyHud.classList.add('is-paying'));
 }
 
-function setEconomyEnabled(enabled) {
+function setEconomyEnabled(enabled, reset = true) {
   economyEnabled = enabled;
   shell.dataset.playMode = enabled ? 'normal' : 'sandbox';
   window.clearInterval(taxTimer);
   taxTimer = null;
 
-  if (enabled) {
+  if (enabled && reset) {
     balance = 2500;
     taxRate.value = '8';
+  }
+
+  if (enabled) {
     taxTimer = window.setInterval(collectTaxes, TAX_CYCLE_MS);
   }
 
   updateEconomyHud();
+}
+
+function createTownSave() {
+  const now = new Date();
+  return {
+    format: 'cozy-street-builder-town',
+    version: TOWN_FILE_VERSION,
+    savedAt: now.toISOString(),
+    town: {
+      playMode: economyEnabled ? 'normal' : 'sandbox',
+      objects: controller.exportTownObjects(),
+      editor: {
+        mode: shell.dataset.mode,
+        gridSize: Number(gridSize.value),
+        generationOptions: getGenerationOptionsFromControls(),
+      },
+      economy: {
+        balance,
+        taxRate: Number(taxRate.value),
+        happiness,
+      },
+      trafficDensity: Number(trafficDensity.value) / 100,
+      environment: scene.getEnvironmentState(),
+      camera: {
+        position: scene.camera.position.toArray(),
+        target: scene.controls.target.toArray(),
+      },
+    },
+  };
+}
+
+function validateTownSave(save) {
+  if (!save || save.format !== 'cozy-street-builder-town' || save.version !== TOWN_FILE_VERSION) {
+    throw new Error('This is not a supported Cozy Street Builder town file.');
+  }
+
+  if (!save.town || !Array.isArray(save.town.objects) || save.town.objects.length > 10000) {
+    throw new Error('The town file is incomplete or contains too many pieces.');
+  }
+
+  if (!['normal', 'sandbox'].includes(save.town.playMode)) {
+    throw new Error('The town file has an invalid play mode.');
+  }
+
+  const hasFiniteVector = (value) => Array.isArray(value)
+    && value.length >= 3
+    && value.slice(0, 3).every(Number.isFinite);
+
+  save.town.objects.forEach((record, index) => {
+    if (typeof record?.assetId !== 'string' || !hasFiniteVector(record.position) || !hasFiniteVector(record.rotation)) {
+      throw new Error(`Town piece ${index + 1} has invalid data.`);
+    }
+
+    if (record.scale !== undefined && !hasFiniteVector(record.scale)) {
+      throw new Error(`Town piece ${index + 1} has an invalid scale.`);
+    }
+  });
+
+  return save;
+}
+
+function updateContinueButton() {
+  try {
+    continueTown.hidden = !localStorage.getItem(TOWN_SAVE_KEY);
+    continueTown.disabled = !assetsReady;
+  } catch {
+    continueTown.hidden = true;
+  }
+}
+
+function setSaveStatus(message, isError = false) {
+  saveStatus.textContent = message;
+  saveStatus.classList.toggle('is-error', isError);
+}
+
+function openEscapeMenu() {
+  if (shell.dataset.screen !== 'game' || !escapeOverlay.hidden) {
+    return;
+  }
+
+  controller.select(null);
+  controller.clearGhost();
+  setDayNightPanelOpen(false);
+  scene.setSimulationPaused(true);
+  escapeSummary.textContent = `${economyEnabled ? 'Normal' : 'Sandbox'} town · ${controller.placed.length} pieces${economyEnabled ? ` · ${currency.format(balance)}` : ''}`;
+  setSaveStatus('');
+  escapeOverlay.hidden = false;
+  escapeToggle.setAttribute('aria-expanded', 'true');
+  document.querySelector('#resume-game').focus();
+}
+
+function closeEscapeMenu() {
+  if (escapeOverlay.hidden) {
+    return;
+  }
+
+  escapeOverlay.hidden = true;
+  escapeToggle.setAttribute('aria-expanded', 'false');
+  scene.setSimulationPaused(false);
+  escapeToggle.focus();
+}
+
+function saveTownToBrowser() {
+  try {
+    const save = createTownSave();
+    localStorage.setItem(TOWN_SAVE_KEY, JSON.stringify(save));
+    updateContinueButton();
+    setSaveStatus(`Saved locally at ${new Date(save.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
+  } catch (error) {
+    setSaveStatus(`Could not save: ${error.message}`, true);
+  }
+}
+
+function exportTownToFile() {
+  try {
+    const save = createTownSave();
+    const blob = new Blob([JSON.stringify(save, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const date = save.savedAt.slice(0, 10);
+    anchor.href = url;
+    anchor.download = `cozy-town-${save.town.playMode}-${date}.cozytown`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setSaveStatus('Town exported. Keep the .cozytown file somewhere safe.');
+  } catch (error) {
+    setSaveStatus(`Could not export: ${error.message}`, true);
+  }
+}
+
+function applyTownSave(rawSave) {
+  if (!assetsReady) {
+    throw new Error('Town pieces are still loading. Please try again in a moment.');
+  }
+
+  const save = validateTownSave(rawSave);
+  const town = save.town;
+  const normalMode = town.playMode === 'normal';
+
+  clearMainMenuTown();
+  setEconomyEnabled(normalMode);
+  enterGameMode(town.editor?.mode ?? 'build');
+
+  const grid = clamp(finiteNumber(town.editor?.gridSize, 2), 0.5, 4);
+  gridSize.value = String(grid);
+  gridSizeValue.value = `${grid}m`;
+  controller.setGridSize(grid);
+
+  const options = town.editor?.generationOptions ?? {};
+  townSize.value = String(clamp(Math.round(finiteNumber(options.townSize, 1)), 0, 2));
+  buildingDensity.value = String(Math.round(clamp(finiteNumber(options.buildingDensity, 0.7), 0, 1) * 100));
+  foliageDensity.value = String(Math.round(clamp(finiteNumber(options.foliageDensity, 0.55), 0, 1) * 100));
+  const density = clamp(finiteNumber(town.trafficDensity, 0.5), 0, 1);
+  trafficDensity.value = String(Math.round(density * 100));
+  generateTrafficDensity.value = trafficDensity.value;
+  townSizeValue.value = townSizeLabels[Number(townSize.value)] ?? 'Medium';
+  buildingDensityValue.value = `${buildingDensity.value}%`;
+  foliageDensityValue.value = `${foliageDensity.value}%`;
+  trafficDensityValue.value = `${trafficDensity.value}%`;
+  generateTrafficDensityValue.value = `${trafficDensity.value}%`;
+  controller.setGenerationOptions({
+    townSize: Number(townSize.value),
+    buildingDensity: Number(buildingDensity.value) / 100,
+    foliageDensity: Number(foliageDensity.value) / 100,
+    trafficDensity: density,
+  });
+  controller.setTrafficDensity(density);
+
+  const result = controller.importTownObjects(town.objects);
+
+  if (normalMode) {
+    balance = Number.isFinite(town.economy?.balance) ? town.economy.balance : 2500;
+    taxRate.value = String(clamp(finiteNumber(town.economy?.taxRate, 8), 0, 20));
+  }
+
+  scene.setEnvironmentState(town.environment);
+  if (Array.isArray(town.camera?.position) && town.camera.position.length >= 3 && town.camera.position.slice(0, 3).every(Number.isFinite)) {
+    scene.camera.position.fromArray(town.camera.position);
+  }
+  if (Array.isArray(town.camera?.target) && town.camera.target.length >= 3 && town.camera.target.slice(0, 3).every(Number.isFinite)) {
+    scene.controls.target.fromArray(town.camera.target);
+  }
+  scene.controls.update();
+  updateEconomyHud();
+  setMode(town.editor?.mode ?? 'build');
+
+  const missingNote = result.missingAssetIds.length
+    ? ` ${result.missingAssetIds.length} unavailable asset type(s) were skipped.`
+    : '';
+  return `Loaded ${result.loaded} pieces.${missingNote}`;
+}
+
+function loadSavedTown() {
+  try {
+    const stored = localStorage.getItem(TOWN_SAVE_KEY);
+    if (!stored) {
+      throw new Error('No locally saved town was found.');
+    }
+    const message = applyTownSave(JSON.parse(stored));
+    closeEscapeMenu();
+    controller.elements.modeLabel.textContent = message;
+  } catch (error) {
+    if (shell.dataset.screen === 'menu') {
+      window.alert(`Could not load town: ${error.message}`);
+    } else {
+      setSaveStatus(`Could not load: ${error.message}`, true);
+    }
+  }
+}
+
+function returnToMainMenu() {
+  if (controller.placed.length > 0 && !window.confirm('Return to the main menu? Export or save first if you want to keep this town.')) {
+    return;
+  }
+
+  escapeOverlay.hidden = true;
+  escapeToggle.setAttribute('aria-expanded', 'false');
+  controller.setFireSimulationEnabled(false);
+  controller.clearTown();
+  setEconomyEnabled(false);
+  shell.dataset.screen = 'menu';
+  scene.setSimulationPaused(false);
+  generateMainMenuTown();
+  updateContinueButton();
 }
 
 backgroundMusic.loop = true;
@@ -659,6 +943,7 @@ function clearMainMenuTown() {
 function enterGameMode(mode) {
   shell.dataset.screen = 'game';
   clearMainMenuTown();
+  scene.setSimulationPaused(false);
   controller.setFireSimulationEnabled(true);
   setMode(mode);
   openWindow('command');
@@ -743,6 +1028,11 @@ function setDayNightPanelOpen(isOpen) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function makeWindowsDraggable() {
@@ -851,6 +1141,42 @@ dockButtons.forEach((button) => {
 });
 
 uiToggle.addEventListener('click', toggleInterface);
+escapeToggle.addEventListener('click', openEscapeMenu);
+document.querySelector('#resume-game').addEventListener('click', closeEscapeMenu);
+document.querySelector('#save-town').addEventListener('click', saveTownToBrowser);
+document.querySelector('#export-town').addEventListener('click', exportTownToFile);
+document.querySelector('#load-saved-town').addEventListener('click', loadSavedTown);
+document.querySelector('#import-town').addEventListener('click', () => {
+  townFileInput.dataset.source = 'escape';
+  townFileInput.click();
+});
+document.querySelector('#return-main-menu').addEventListener('click', returnToMainMenu);
+townFileInput.addEventListener('change', async () => {
+  const file = townFileInput.files?.[0];
+  const requestedFromMenu = townFileInput.dataset.source === 'menu';
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    if (file.size > 8 * 1024 * 1024) {
+      throw new Error('Town files must be smaller than 8 MB.');
+    }
+
+    const message = applyTownSave(JSON.parse(await file.text()));
+    closeEscapeMenu();
+    controller.elements.modeLabel.textContent = message;
+  } catch (error) {
+    if (requestedFromMenu) {
+      window.alert(`Could not load town: ${error.message}`);
+    } else {
+      setSaveStatus(`Could not load: ${error.message}`, true);
+    }
+  } finally {
+    townFileInput.value = '';
+  }
+});
 fullscreenToggle.addEventListener('click', toggleFullscreen);
 document.addEventListener('fullscreenchange', () => {
   setFullscreenButtonState(Boolean(document.fullscreenElement));
@@ -866,6 +1192,11 @@ startNormal.addEventListener('click', () => {
   clearMainMenuTown();
   setEconomyEnabled(true);
   enterGameMode('build');
+});
+continueTown.addEventListener('click', loadSavedTown);
+menuImportTown.addEventListener('click', () => {
+  townFileInput.dataset.source = 'menu';
+  townFileInput.click();
 });
 menuOptions.addEventListener('click', () => {
   const isOpen = menuOptions.getAttribute('aria-expanded') === 'true';
@@ -914,8 +1245,37 @@ document.addEventListener('click', (event) => {
   setDayNightPanelOpen(false);
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    setDayNightPanelOpen(false);
+  if (event.key === 'Tab' && !escapeOverlay.hidden) {
+    const focusable = [...escapeOverlay.querySelectorAll('button:not(:disabled)')];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+      last.focus();
+      event.preventDefault();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      first.focus();
+      event.preventDefault();
+    }
+    return;
+  }
+
+  if (event.key !== 'Escape') {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  setDayNightPanelOpen(false);
+
+  if (shell.dataset.screen !== 'game') {
+    return;
+  }
+
+  if (escapeOverlay.hidden) {
+    openEscapeMenu();
+  } else {
+    closeEscapeMenu();
   }
 });
 
@@ -1061,7 +1421,13 @@ document.querySelector('#reload-assets').addEventListener('click', () => control
 document.querySelector('#generate-town').addEventListener('click', () => controller.generateTown());
 document.querySelector('#clear-town').addEventListener('click', () => controller.clearTown());
 
+updateContinueButton();
 await controller.loadAssets(assetPacks);
+assetsReady = true;
+startNormal.disabled = false;
+startSandbox.disabled = false;
+menuImportTown.disabled = false;
+updateContinueButton();
 if (shell.dataset.screen === 'menu') {
   generateMainMenuTown();
 }

@@ -8,6 +8,7 @@ Cozy Street Builder is a small Three.js city builder for creating cute low-poly 
 - Build, Generate, and View modes
 - Random town generation with roads, buildings, foliage, pedestrians, and traffic
 - Simple camera controls for exploring the scene
+- Pause menu with local saves and portable `.cozytown` import/export for normal and sandbox towns
 - GLB asset support through the local asset catalog
 
 ## Run Locally

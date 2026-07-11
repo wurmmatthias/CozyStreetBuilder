@@ -64,6 +64,7 @@ export class SceneManager {
     this.streetlightUpdateAccumulator = 0;
     this.dayNightSubscribers = new Set();
     this.weatherSubscribers = new Set();
+    this.simulationPaused = false;
     this.fictionalMinutes = 8 * 60;
     this.isTimePaused = false;
     this.lastClockStep = -1;
@@ -299,6 +300,31 @@ export class SceneManager {
 
   toggleTimePaused() {
     this.setTimePaused(!this.isTimePaused);
+  }
+
+  setSimulationPaused(paused) {
+    this.simulationPaused = Boolean(paused);
+    this.pressedKeys.clear();
+  }
+
+  getEnvironmentState() {
+    return {
+      fictionalMinutes: this.fictionalMinutes,
+      timePaused: this.isTimePaused,
+      weather: this.weather,
+      weatherAuto: this.isWeatherAuto,
+    };
+  }
+
+  setEnvironmentState(state = {}) {
+    if (Number.isFinite(state.fictionalMinutes)) {
+      this.setFictionalTime(state.fictionalMinutes);
+    }
+
+    this.setTimePaused(state.timePaused === true);
+    this.isWeatherAuto = state.weatherAuto === true;
+    this.lastWeatherSlot = Math.floor(this.fictionalMinutes / WEATHER_RANDOM_STEP_MINUTES);
+    this.applyWeather(state.weather);
   }
 
   onDayNightChange(callback) {
@@ -900,8 +926,10 @@ export class SceneManager {
       const now = performance.now();
       const delta = Math.min((now - this.lastFrameTime) / 1000, 0.05);
       this.lastFrameTime = now;
-      this.updateKeyboardCamera(delta);
-      this.updaters.forEach((updater) => updater(delta, now));
+      if (!this.simulationPaused) {
+        this.updateKeyboardCamera(delta);
+        this.updaters.forEach((updater) => updater(delta, now));
+      }
       this.controls.update();
       this.updateSunLightShadowCenter();
       this.renderer.render(this.scene, this.camera);

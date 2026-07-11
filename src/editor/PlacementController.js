@@ -670,6 +670,68 @@ export class PlacementController {
     );
   }
 
+  exportTownObjects() {
+    return this.placed.map((object) => ({
+      assetId: object.userData.assetId,
+      position: object.position.toArray(),
+      rotation: object.rotation.toArray().slice(0, 3),
+      scale: object.scale.toArray(),
+      generated: object.userData.generatedTownObject === true,
+    }));
+  }
+
+  importTownObjects(records) {
+    if (!Array.isArray(records)) {
+      throw new Error('The town file does not contain a valid object list.');
+    }
+
+    const availableAssets = new Map(this.assets.map((asset) => [asset.id, asset]));
+    const validRecords = [];
+    const missingAssetIds = new Set();
+
+    records.forEach((record) => {
+      const asset = availableAssets.get(record?.assetId);
+
+      if (!asset) {
+        if (typeof record?.assetId === 'string') {
+          missingAssetIds.add(record.assetId);
+        }
+        return;
+      }
+
+      if (!isFiniteVector(record.position, 3) || !isFiniteVector(record.rotation, 3)) {
+        throw new Error(`Invalid transform for asset "${record.assetId}".`);
+      }
+
+      validRecords.push({ record, asset });
+    });
+
+    this.clearTown();
+    validRecords.forEach(({ record, asset }) => {
+      const object = makePlaceableClone(asset.source, asset);
+      object.position.fromArray(record.position);
+      object.rotation.set(record.rotation[0], record.rotation[1], record.rotation[2]);
+
+      if (isFiniteVector(record.scale, 3)) {
+        object.scale.fromArray(record.scale);
+      }
+
+      object.userData.editorObject = true;
+      object.userData.generatedTownObject = record.generated === true;
+      this.placed.push(object);
+      this.sceneManager.add(object);
+    });
+
+    this.syncTrafficRoads();
+    this.onTownChanged(this.placed);
+    this.elements.modeLabel.textContent = `${validRecords.length} town pieces loaded.`;
+
+    return {
+      loaded: validRecords.length,
+      missingAssetIds: [...missingAssetIds],
+    };
+  }
+
   placeGeneratedAssetAt(asset, position, rotation) {
     const object = makePlaceableClone(asset.source, asset);
     object.position.copy(position);
@@ -1542,6 +1604,12 @@ function createStreetlightPlacementForSide(roadX, roadZ, sideDirection) {
     position,
     rotation: rotationFacingDirection(-sideNormal.x, -sideNormal.z),
   };
+}
+
+function isFiniteVector(value, length) {
+  return Array.isArray(value)
+    && value.length >= length
+    && value.slice(0, length).every((component) => Number.isFinite(component));
 }
 
 function getRoadParts(assets) {

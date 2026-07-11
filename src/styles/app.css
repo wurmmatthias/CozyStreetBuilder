@@ -450,6 +450,124 @@ dd {
   overflow-wrap: anywhere;
 }
 
+.escape-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(49 41 36 / 0.46);
+  backdrop-filter: blur(9px) saturate(0.78);
+  pointer-events: auto;
+  z-index: 30;
+}
+
+.escape-card {
+  display: grid;
+  gap: 14px;
+  width: min(430px, calc(100vw - 28px));
+  max-height: calc(100vh - 32px);
+  padding: 18px;
+  overflow: auto;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(255 241 214 / 0.97)),
+    var(--cream);
+  border: 2px solid #dfb37f;
+  border-bottom-width: 6px;
+  border-radius: 12px;
+  box-shadow: 0 26px 70px rgb(39 29 24 / 0.36), inset 0 1px 0 #fff;
+}
+
+.escape-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgb(203 161 116 / 0.38);
+}
+
+.escape-header h2 {
+  font-size: 1.5rem;
+}
+
+.escape-key {
+  padding: 7px 10px;
+  color: #806b5d;
+  font-size: 0.7rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  background: #fffaf1;
+  border: 2px solid #d8b68d;
+  border-bottom-width: 4px;
+  border-radius: 7px;
+}
+
+.escape-summary {
+  color: #79675b;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.escape-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.escape-button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 12px;
+  color: #624f43;
+  font-size: 0.8rem;
+  font-weight: 950;
+  text-align: left;
+  background: linear-gradient(180deg, #fff, #ffe6c2);
+  border: 2px solid #dba978;
+  border-bottom-width: 4px;
+  border-radius: 8px;
+}
+
+.escape-button:hover {
+  background: linear-gradient(180deg, #fff, var(--sky));
+  border-color: #76bde5;
+  transform: translateY(-1px);
+}
+
+.escape-button.primary {
+  color: #3f4b40;
+  background: linear-gradient(180deg, #fff, var(--mint));
+  border-color: #74c99a;
+}
+
+.escape-button.danger {
+  color: #874d49;
+  background: linear-gradient(180deg, #fff, var(--rose));
+  border-color: #d9959e;
+}
+
+.save-status {
+  min-height: 18px;
+  color: #4b745a;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.save-status.is-error {
+  color: #a6504a;
+}
+
+.save-hint {
+  color: #907b6c;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
 .hud-button {
   display: grid;
   place-items: center;
@@ -551,6 +669,15 @@ dd {
   right: 18px;
   top: 140px;
   width: min(340px, calc(100vw - 24px));
+}
+
+.hud-button.escape-toggle {
+  grid-template-columns: auto auto;
+  gap: 7px;
+  width: auto;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  font-weight: 950;
 }
 
 .generate-window {
@@ -1404,6 +1531,23 @@ input[type='range']::-webkit-slider-thumb {
 
   .main-menu-box {
     padding: 12px;
+  }
+
+  .escape-card {
+    padding: 14px;
+  }
+
+  .escape-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-button.escape-toggle span {
+    display: none;
+  }
+
+  .hud-button.escape-toggle {
+    width: 46px;
+    padding: 0;
   }
 
   .game-window {

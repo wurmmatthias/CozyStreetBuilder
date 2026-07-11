@@ -938,7 +938,7 @@ function generateMainMenuTown() {
   mainMenuTownActive = true;
 
   scene.controls.target.copy(mainMenuCameraTarget);
-  scene.camera.position.set(30, 24, 30);
+  scene.camera.position.set(18, 14, 18);
   scene.controls.update();
   startMainMenuBuildAnimation();
 }

@@ -48,12 +48,13 @@ app.innerHTML = `
                 <span>Fullscreen</span>
               </button>
             </div>
-            <button class="main-menu-button credit" id="created-by" type="button">
+            <p class="main-menu-credit">
               <i class="fa-solid fa-star" aria-hidden="true"></i>
               <span>Created by Matthias Wurm</span>
-            </button>
+            </p>
           </div>
         </div>
+        <span class="main-menu-version" aria-label="Application version">${__APP_VERSION__}</span>
       </section>
 
       <section class="escape-overlay" id="escape-overlay" aria-label="Paused game menu" aria-modal="true" role="dialog" hidden>

@@ -134,6 +134,24 @@ dd {
   width: min(620px, calc(100vw - 32px));
 }
 
+.main-menu-version {
+  position: absolute;
+  right: 10px;
+  bottom: 7px;
+  color: rgb(255 255 255 / 0.92);
+  font-family: "Arial Rounded MT Bold", "Trebuchet MS", ui-rounded, sans-serif;
+  font-size: 0.72rem;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-shadow:
+    0 1px 2px rgb(55 68 75 / 0.88),
+    0 2px 7px rgb(55 68 75 / 0.62);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .main-menu-title {
   width: clamp(300px, 44vw, 540px);
   max-width: 100%;
@@ -202,10 +220,21 @@ dd {
   border-color: #74c99a;
 }
 
-.main-menu-button.credit {
+.main-menu-credit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0 0;
   color: #725b4d;
-  background: linear-gradient(180deg, #fffdf8, var(--rose));
-  border-color: #d9959e;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.main-menu-credit .fa-solid {
+  color: #d9959e;
+  font-size: 0.72rem;
 }
 
 .main-menu-button.compact {

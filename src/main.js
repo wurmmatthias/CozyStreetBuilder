@@ -1,5 +1,6 @@
 import './styles/app.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
+import * as THREE from 'three';
 import { SceneManager } from './editor/SceneManager.js';
 import { PlacementController } from './editor/PlacementController.js';
 import { assetPacks } from './editor/assetCatalog.js';
@@ -485,6 +486,9 @@ const menuMusic = document.querySelector('#menu-music');
 const menuFullscreen = document.querySelector('#menu-fullscreen');
 const backgroundMusic = new Audio(assetUrl('/assets/sounds/bg.mp3'));
 let mainMenuTownActive = false;
+let mainMenuBuildAnimation = null;
+const mainMenuCameraTarget = new THREE.Vector3(0, 1.5, 0);
+const MAIN_MENU_CAMERA_SPEED = 0.055;
 const economyBalance = document.querySelector('#economy-balance');
 const taxRate = document.querySelector('#tax-rate');
 const taxRateValue = document.querySelector('#tax-rate-value');
@@ -925,12 +929,159 @@ function getGenerationOptionsFromControls() {
 }
 
 function generateMainMenuTown() {
+  stopMainMenuBuildAnimation();
   controller.setGenerationOptions(getGenerationOptionsFromControls());
   controller.setTrafficDensity(Number(generateTrafficDensity.value) / 100);
   controller.generateTown();
   controller.select(null);
   controller.clearGhost();
   mainMenuTownActive = true;
+
+  scene.controls.target.copy(mainMenuCameraTarget);
+  scene.camera.position.set(30, 24, 30);
+  scene.controls.update();
+  startMainMenuBuildAnimation();
+}
+
+function startMainMenuBuildAnimation() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+
+  const kindOrder = { road: 0, building: 1, streetlight: 2, foliage: 3 };
+  const shuffledObjects = controller.placed
+    .map((object) => ({ object, randomOrder: Math.random() }))
+    .sort((a, b) => {
+      const kindDifference = (kindOrder[a.object.userData.assetKind] ?? 4)
+        - (kindOrder[b.object.userData.assetKind] ?? 4);
+      return kindDifference || a.randomOrder - b.randomOrder;
+    });
+  const animationSpan = 5.5;
+
+  mainMenuBuildAnimation = {
+    elapsed: 0,
+    ambient: false,
+    nextChange: 0,
+    items: shuffledObjects.map(({ object }, index) => {
+      const baseScale = object.scale.clone();
+      const baseY = object.position.y;
+      const delay = shuffledObjects.length > 1
+        ? (index / (shuffledObjects.length - 1)) * animationSpan
+        : 0;
+      object.scale.setScalar(0.001);
+      object.position.y = baseY - (object.userData.assetKind === 'road' ? 0.16 : 0.7);
+      return { object, baseScale, baseY, delay, phase: 'opening', phaseElapsed: 0 };
+    }),
+  };
+}
+
+function stopMainMenuBuildAnimation({ finish = false } = {}) {
+  if (!mainMenuBuildAnimation) {
+    return;
+  }
+
+  if (finish) {
+    mainMenuBuildAnimation.items.forEach(({ object, baseScale, baseY }) => {
+      object.scale.copy(baseScale);
+      object.position.y = baseY;
+    });
+  }
+  mainMenuBuildAnimation = null;
+}
+
+function updateMainMenuBackdrop(delta) {
+  if (shell.dataset.screen !== 'menu') {
+    return;
+  }
+
+  const offset = scene.camera.position.clone().sub(scene.controls.target);
+  offset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, MAIN_MENU_CAMERA_SPEED * delta);
+  scene.camera.position.copy(scene.controls.target).add(offset);
+
+  if (!mainMenuBuildAnimation) {
+    return;
+  }
+
+  mainMenuBuildAnimation.elapsed += delta;
+  if (mainMenuBuildAnimation.ambient) {
+    updateMainMenuTownChanges(delta);
+    return;
+  }
+
+  let animationComplete = true;
+  mainMenuBuildAnimation.items.forEach(({ object, baseScale, baseY, delay }) => {
+    const progress = THREE.MathUtils.clamp((mainMenuBuildAnimation.elapsed - delay) / 0.65, 0, 1);
+    if (progress < 1) animationComplete = false;
+    const eased = progress === 0 ? 0.001 : 1 - Math.pow(1 - progress, 3);
+    const bounce = progress > 0 && progress < 1 ? Math.sin(progress * Math.PI) * 0.08 : 0;
+    object.scale.copy(baseScale).multiplyScalar(eased + bounce);
+    object.position.y = THREE.MathUtils.lerp(baseY - (object.userData.assetKind === 'road' ? 0.16 : 0.7), baseY, eased);
+  });
+
+  if (animationComplete) {
+    mainMenuBuildAnimation.ambient = true;
+    mainMenuBuildAnimation.nextChange = 0.45;
+    mainMenuBuildAnimation.items.forEach((item) => {
+      item.phase = 'idle';
+      item.object.scale.copy(item.baseScale);
+      item.object.position.y = item.baseY;
+    });
+  }
+}
+
+function updateMainMenuTownChanges(delta) {
+  const animation = mainMenuBuildAnimation;
+  animation.nextChange -= delta;
+  const activeCount = animation.items.filter((item) => item.phase !== 'idle').length;
+
+  if (animation.nextChange <= 0 && activeCount < 7) {
+    const candidates = animation.items.filter((item) => item.phase === 'idle');
+    const item = candidates[Math.floor(Math.random() * candidates.length)];
+    if (item) {
+      item.phase = 'removing';
+      item.phaseElapsed = 0;
+    }
+    animation.nextChange = THREE.MathUtils.randFloat(0.3, 0.75);
+  }
+
+  animation.items.forEach((item) => {
+    if (item.phase === 'idle') return;
+    item.phaseElapsed += delta;
+    const loweredY = item.baseY - (item.object.userData.assetKind === 'road' ? 0.16 : 0.7);
+
+    if (item.phase === 'removing') {
+      const progress = THREE.MathUtils.clamp(item.phaseElapsed / 0.5, 0, 1);
+      const eased = Math.pow(1 - progress, 3);
+      item.object.scale.copy(item.baseScale).multiplyScalar(Math.max(eased, 0.001));
+      item.object.position.y = THREE.MathUtils.lerp(item.baseY, loweredY, progress);
+      if (progress >= 1) {
+        item.phase = 'hidden';
+        item.phaseElapsed = 0;
+        item.phaseDuration = THREE.MathUtils.randFloat(0.35, 0.7);
+      }
+      return;
+    }
+
+    if (item.phase === 'hidden') {
+      if (item.phaseElapsed >= item.phaseDuration) {
+        item.phase = 'adding';
+        item.phaseElapsed = 0;
+      }
+      return;
+    }
+
+    const progress = THREE.MathUtils.clamp(item.phaseElapsed / 0.65, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const bounce = progress < 1 ? Math.sin(progress * Math.PI) * 0.08 : 0;
+    item.object.scale.copy(item.baseScale).multiplyScalar(eased + bounce);
+    item.object.position.y = THREE.MathUtils.lerp(loweredY, item.baseY, eased);
+    if (progress >= 1) {
+      item.object.scale.copy(item.baseScale);
+      item.object.position.y = item.baseY;
+      item.phase = 'idle';
+      item.phaseElapsed = 0;
+    }
+  });
 }
 
 function clearMainMenuTown() {
@@ -938,6 +1089,7 @@ function clearMainMenuTown() {
     return;
   }
 
+  stopMainMenuBuildAnimation();
   controller.clearTown();
   mainMenuTownActive = false;
 }
@@ -1434,4 +1586,5 @@ if (shell.dataset.screen === 'menu') {
   generateMainMenuTown();
 }
 setMode('build');
+scene.addUpdater(updateMainMenuBackdrop);
 scene.start();

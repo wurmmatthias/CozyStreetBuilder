@@ -9,6 +9,14 @@ const CLOUD_FIELD_HALF_WIDTH = 76;
 const CLOUD_MIN_HEIGHT = 14;
 const CLOUD_MAX_HEIGHT = 28;
 const CLOUD_WRAP_PADDING = 24;
+const AIRPLANE_ASSET_URL = `${import.meta.env.BASE_URL}assets/aerial/Airplane.glb`;
+const AIRPLANE_ROUTE_RADIUS = 112;
+const AIRPLANE_MIN_HEIGHT = 19;
+const AIRPLANE_MAX_HEIGHT = 27;
+const AIRPLANE_MIN_INTERVAL = 20;
+const AIRPLANE_MAX_INTERVAL = 42;
+const AIRPLANE_TRAIL_POINTS = 150;
+const AIRPLANE_TRAIL_LINGER_SECONDS = 4.5;
 const DAY_LENGTH_SECONDS = 240;
 const CLOCK_STEP_MINUTES = 15;
 const STREETLIGHT_TURN_ON_SPREAD_SECONDS = 5.2;
@@ -46,6 +54,9 @@ export class SceneManager {
     this.pressedKeys = new Set();
     this.updaters = new Set();
     this.clouds = [];
+    this.airplanes = [];
+    this.airplaneSource = null;
+    this.airplaneSpawnTimer = randomFloat(4, 9);
     this.followCameraFeeds = new Set();
     this.windowGlowMaterials = new Set();
     this.streetlightFixtures = new Set();
@@ -105,6 +116,7 @@ export class SceneManager {
     this.scene.add(this.ground, this.grid);
     this.addLighting();
     this.addClouds();
+    this.addAirplaneSystem();
     this.addWeatherSystem();
     this.updateDayNightCycle(0);
     this.addUpdater((delta) => this.updateDayNightCycle(delta));
@@ -624,6 +636,122 @@ export class SceneManager {
     });
   }
 
+  async addAirplaneSystem() {
+    const loader = new GLTFLoader();
+
+    try {
+      const gltf = await loader.loadAsync(AIRPLANE_ASSET_URL);
+      this.airplaneSource = gltf.scene;
+      this.addUpdater((delta) => this.updateAirplanes(delta));
+    } catch (error) {
+      console.warn('Could not load ambient airplane.', error);
+    }
+  }
+
+  spawnAirplane() {
+    if (!this.airplaneSource || this.airplanes.length > 0) {
+      return;
+    }
+
+    const root = new THREE.Group();
+    const model = cloneSkeleton(this.airplaneSource);
+    normalizeAirplaneModel(model, 4.35);
+    // The source model's nose points along +X; the flight rig moves along +Z.
+    model.rotation.y = -Math.PI / 2;
+    model.traverse((child) => {
+      child.castShadow = false;
+      child.receiveShadow = false;
+    });
+    root.add(model);
+
+    const route = createAirplaneRoute();
+    const trails = [-1, 1].map((side) => createAirplaneTrail(side));
+    trails.forEach((trail) => this.scene.add(trail.line));
+    this.scene.add(root);
+
+    const airplane = {
+      root,
+      route,
+      trails,
+      progress: 0,
+      duration: randomFloat(25, 38),
+      lingerTime: AIRPLANE_TRAIL_LINGER_SECONDS,
+      departed: false,
+    };
+    this.airplanes.push(airplane);
+    this.placeAirplane(airplane, 0);
+  }
+
+  updateAirplanes(delta) {
+    if (this.airplanes.length === 0) {
+      this.airplaneSpawnTimer -= delta;
+      if (this.airplaneSpawnTimer <= 0) {
+        this.spawnAirplane();
+        this.airplaneSpawnTimer = randomFloat(AIRPLANE_MIN_INTERVAL, AIRPLANE_MAX_INTERVAL);
+      }
+      return;
+    }
+
+    this.airplanes = this.airplanes.filter((airplane) => {
+      if (airplane.departed) {
+        airplane.lingerTime -= delta;
+        const fade = THREE.MathUtils.clamp(
+          airplane.lingerTime / AIRPLANE_TRAIL_LINGER_SECONDS,
+          0,
+          1,
+        );
+        airplane.trails.forEach((trail) => {
+          trail.line.material.opacity = 0.42 * fade;
+        });
+
+        if (airplane.lingerTime > 0) {
+          return true;
+        }
+
+        airplane.trails.forEach((trail) => {
+          this.scene.remove(trail.line);
+          trail.line.geometry.dispose();
+          trail.line.material.dispose();
+        });
+        return false;
+      }
+
+      airplane.progress += delta / airplane.duration;
+      if (airplane.progress >= 1) {
+        this.scene.remove(airplane.root);
+        airplane.departed = true;
+        return true;
+      }
+
+      this.placeAirplane(airplane, airplane.progress);
+      return true;
+    });
+  }
+
+  placeAirplane(airplane, progress) {
+    const position = airplane.route.getPointAt(progress);
+    const tangent = airplane.route.getTangentAt(progress).normalize();
+    airplane.root.position.copy(position);
+    airplane.root.quaternion.setFromUnitVectors(WORLD_FORWARD, tangent);
+
+    airplane.trails.forEach((trail) => {
+      const emitter = new THREE.Vector3(trail.side * 1.35, 0, -1.45)
+        .applyQuaternion(airplane.root.quaternion)
+        .add(position);
+      emitter.add(new THREE.Vector3(
+        randomFloat(-0.055, 0.055),
+        randomFloat(-0.055, 0.055),
+        randomFloat(-0.055, 0.055),
+      ));
+      trail.points.unshift(emitter);
+      if (trail.points.length > AIRPLANE_TRAIL_POINTS) {
+        trail.points.pop();
+      }
+      trail.line.geometry.setFromPoints(trail.points);
+      trail.line.material.opacity = Math.min(trail.points.length / 10, 0.42);
+    });
+  }
+
   add(object) {
     this.scene.add(object);
     this.registerBuildingWindows(object);
@@ -943,6 +1071,94 @@ function normalizeCloudModel(model, targetWidth) {
   const scaledBox = new THREE.Box3().setFromObject(model);
   const center = scaledBox.getCenter(new THREE.Vector3());
   model.position.sub(center);
+}
+
+function normalizeAirplaneModel(model, targetSize) {
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const longestSide = Math.max(size.x, size.y, size.z);
+
+  if (!Number.isFinite(longestSide) || longestSide <= 0) {
+    return;
+  }
+
+  model.scale.multiplyScalar(targetSize / longestSide);
+  model.updateMatrixWorld(true);
+  const scaledBox = new THREE.Box3().setFromObject(model);
+  const center = scaledBox.getCenter(new THREE.Vector3());
+  model.position.sub(center);
+}
+
+function createAirplaneRoute() {
+  const angle = randomFloat(0, Math.PI * 2);
+  const direction = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
+  const side = new THREE.Vector3(direction.z, 0, -direction.x);
+  const height = randomFloat(AIRPLANE_MIN_HEIGHT, AIRPLANE_MAX_HEIGHT);
+  const startOffset = randomFloat(-28, 28);
+  const endOffset = randomFloat(-28, 28);
+  const start = direction.clone().multiplyScalar(-AIRPLANE_ROUTE_RADIUS)
+    .addScaledVector(side, startOffset)
+    .setY(height + randomFloat(-1.5, 1.5));
+  const end = direction.clone().multiplyScalar(AIRPLANE_ROUTE_RADIUS)
+    .addScaledVector(side, endOffset)
+    .setY(height + randomFloat(-1.5, 1.5));
+
+  if (Math.random() < 0.45) {
+    return new THREE.LineCurve3(start, end);
+  }
+
+  const bend = randomFloat(24, 54) * randomItem([-1, 1]);
+  const controlA = start.clone().lerp(end, 0.34).addScaledVector(side, bend);
+  const controlB = start.clone().lerp(end, 0.67).addScaledVector(side, bend * randomFloat(0.72, 1.12));
+  controlA.y += randomFloat(-2, 2);
+  controlB.y += randomFloat(-2, 2);
+  return new THREE.CubicBezierCurve3(start, controlA, controlB, end);
+}
+
+function createAirplaneTrail(side) {
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const material = new THREE.PointsMaterial({
+    color: '#f7fbff',
+    map: createSoftParticleTexture(),
+    size: 0.72,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    alphaTest: 0.025,
+  });
+  const line = new THREE.Points(geometry, material);
+  line.frustumCulled = false;
+  line.renderOrder = 1;
+  return { side, line, points: [] };
+}
+
+let softParticleTexture;
+
+function createSoftParticleTexture() {
+  if (softParticleTexture) {
+    return softParticleTexture;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(32, 32, 3, 32, 32, 30);
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(0.35, 'rgba(248, 252, 255, 0.92)');
+  gradient.addColorStop(0.72, 'rgba(235, 247, 255, 0.4)');
+  gradient.addColorStop(1, 'rgba(235, 247, 255, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+
+  softParticleTexture = new THREE.CanvasTexture(canvas);
+  softParticleTexture.colorSpace = THREE.SRGBColorSpace;
+  return softParticleTexture;
 }
 
 function updateFollowCamera(feed, delta) {

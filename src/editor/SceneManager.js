@@ -28,16 +28,19 @@ const SUN_SHADOW_MAP_SIZE = 4096;
 const SUN_SHADOW_CAMERA_NEAR = 1;
 const SUN_SHADOW_CAMERA_FAR = 96;
 const WEATHER_RANDOM_STEP_MINUTES = 180;
-const RAIN_DROP_COUNT = 720;
+const RAIN_DROP_COUNT = 2200;
 const SNOW_FLAKE_COUNT = 480;
 const SNOW_GROUND_ACCUMULATION_SECONDS = 22;
 const SNOW_GROUND_MELT_SECONDS = 14;
 const WEATHER_FIELD_HALF_WIDTH = 58;
 const WEATHER_MIN_HEIGHT = 3.5;
 const WEATHER_MAX_HEIGHT = 32;
+const LIGHTNING_MIN_INTERVAL = 4.5;
+const LIGHTNING_MAX_INTERVAL = 13;
+const LIGHTNING_FLASH_DURATION = 0.62;
 const WEATHER_LABELS = {
   sunny: 'Sunny',
-  rain: 'Rain',
+  rain: 'Thunderstorm',
   snow: 'Snow',
 };
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -73,6 +76,8 @@ export class SceneManager {
     this.isWeatherAuto = false;
     this.lastWeatherSlot = -1;
     this.snowGroundAmount = 0;
+    this.lightningTimer = randomFloat(2.5, 7);
+    this.lightningAge = Infinity;
     this.dayNightState = null;
     this.skyDayColor = new THREE.Color('#8fd0ee');
     this.skyNightColor = new THREE.Color('#15213c');
@@ -80,9 +85,9 @@ export class SceneManager {
     this.fogNightColor = new THREE.Color('#192847');
     this.groundDayColor = new THREE.Color('#74b85b');
     this.groundNightColor = new THREE.Color('#2f5645');
-    this.skyRainColor = new THREE.Color('#7fa9bd');
+    this.skyRainColor = new THREE.Color('#334655');
     this.skySnowColor = new THREE.Color('#cfe8f0');
-    this.fogRainColor = new THREE.Color('#94aeba');
+    this.fogRainColor = new THREE.Color('#536673');
     this.fogSnowColor = new THREE.Color('#dbeff2');
     this.groundRainColor = new THREE.Color('#4f8063');
     this.groundSnowColor = new THREE.Color('#dceee9');
@@ -209,7 +214,7 @@ export class SceneManager {
     const nightFactor = 1 - smoothstep(-0.22, 0.14, sunHeight);
     const sunAngle = dayProgress * Math.PI * 2;
     const clockStep = Math.floor(this.fictionalMinutes / CLOCK_STEP_MINUTES);
-    const weatherDimming = this.weather === 'rain' ? 0.74 : this.weather === 'snow' ? 0.86 : 1;
+    const weatherDimming = this.weather === 'rain' ? 0.48 : this.weather === 'snow' ? 0.86 : 1;
     const snowGroundTarget = this.weather === 'snow' ? 1 : 0;
     const snowGroundDuration = snowGroundTarget > this.snowGroundAmount
       ? SNOW_GROUND_ACCUMULATION_SECONDS
@@ -229,9 +234,9 @@ export class SceneManager {
     this.weatherGroundColor.copy(this.groundDayColor).lerp(this.groundNightColor, nightFactor);
 
     if (this.weather === 'rain') {
-      this.weatherSkyColor.lerp(this.skyRainColor, 0.44);
-      this.weatherFogColor.lerp(this.fogRainColor, 0.5);
-      this.weatherGroundColor.lerp(this.groundRainColor, 0.34);
+      this.weatherSkyColor.lerp(this.skyRainColor, 0.78);
+      this.weatherFogColor.lerp(this.fogRainColor, 0.72);
+      this.weatherGroundColor.lerp(this.groundRainColor, 0.48);
     } else if (this.weather === 'snow') {
       this.weatherSkyColor.lerp(this.skySnowColor, 0.36);
       this.weatherFogColor.lerp(this.fogSnowColor, 0.52);
@@ -349,10 +354,11 @@ export class SceneManager {
     this.rainSystem = createPrecipitationSystem({
       count: RAIN_DROP_COUNT,
       color: '#b7ddff',
-      size: 0.08,
-      opacity: 0.66,
-      speedRange: [18, 28],
-      slantRange: [2.1, 3.4],
+      size: 0.42,
+      opacity: 0.82,
+      speedRange: [24, 39],
+      slantRange: [4.2, 7.2],
+      map: createRainTexture(),
     });
     this.snowSystem = createPrecipitationSystem({
       count: SNOW_FLAKE_COUNT,
@@ -363,12 +369,17 @@ export class SceneManager {
       slantRange: [-0.25, 0.25],
       phaseRange: [0, Math.PI * 2],
     });
+    this.lightningGroup = new THREE.Group();
+    this.lightningGroup.name = 'Lightning';
+    this.lightningGroup.visible = false;
+    this.lightningFlash = new THREE.PointLight('#dbe9ff', 0, 130, 1.35);
+    this.lightningFlash.position.set(0, 30, 0);
 
     this.rainSystem.points.name = 'Rain';
     this.snowSystem.points.name = 'Snow';
     this.rainSystem.points.visible = false;
     this.snowSystem.points.visible = false;
-    this.weatherGroup.add(this.rainSystem.points, this.snowSystem.points);
+    this.weatherGroup.add(this.rainSystem.points, this.snowSystem.points, this.lightningGroup, this.lightningFlash);
     this.scene.add(this.weatherGroup);
   }
 
@@ -382,9 +393,41 @@ export class SceneManager {
 
     if (this.weather === 'rain') {
       updateRainSystem(this.rainSystem, delta);
+      this.updateLightning(delta);
     } else if (this.weather === 'snow') {
       updateSnowSystem(this.snowSystem, delta, now / 1000);
     }
+  }
+
+  updateLightning(delta) {
+    this.lightningTimer -= delta;
+
+    if (this.lightningTimer <= 0) {
+      this.triggerLightningStrike();
+      this.lightningTimer = randomFloat(LIGHTNING_MIN_INTERVAL, LIGHTNING_MAX_INTERVAL);
+    }
+
+    this.lightningAge += delta;
+    const age = this.lightningAge;
+    const firstFlash = Math.max(0, 1 - age / 0.105);
+    const secondFlash = age > 0.16 ? Math.max(0, 1 - (age - 0.16) / 0.18) * 0.72 : 0;
+    const flash = Math.max(firstFlash, secondFlash);
+    this.lightningFlash.intensity = flash * 34;
+    this.lightningGroup.visible = age < LIGHTNING_FLASH_DURATION && (age < 0.11 || (age > 0.16 && age < 0.36));
+  }
+
+  triggerLightningStrike() {
+    this.lightningGroup.traverse((object) => {
+      object.geometry?.dispose();
+      object.material?.dispose();
+    });
+    this.lightningGroup.clear();
+    const strikeX = randomFloat(-34, 34);
+    const strikeZ = randomFloat(-34, 34);
+    const bolt = createLightningBolt(strikeX, strikeZ);
+    this.lightningGroup.add(bolt);
+    this.lightningFlash.position.set(strikeX, 24, strikeZ);
+    this.lightningAge = 0;
   }
 
   setWeather(weather) {
@@ -422,6 +465,14 @@ export class SceneManager {
     }
 
     this.weather = nextWeather;
+
+    if (nextWeather !== 'rain' && this.lightningGroup) {
+      this.lightningGroup.visible = false;
+      this.lightningFlash.intensity = 0;
+      this.lightningAge = Infinity;
+    } else if (nextWeather === 'rain') {
+      this.lightningTimer = randomFloat(1.5, 5.5);
+    }
 
     if (this.rainSystem && this.snowSystem) {
       this.rainSystem.points.visible = nextWeather === 'rain';
@@ -1256,6 +1307,7 @@ function createPrecipitationSystem({
   speedRange,
   slantRange,
   phaseRange = [0, 0],
+  map = null,
 }) {
   const positions = new Float32Array(count * 3);
   const speeds = new Float32Array(count);
@@ -1278,6 +1330,9 @@ function createPrecipitationSystem({
     size,
     transparent: true,
     opacity,
+    map,
+    alphaTest: map ? 0.02 : 0,
+    blending: map ? THREE.AdditiveBlending : THREE.NormalBlending,
     depthWrite: false,
   });
 
@@ -1292,6 +1347,73 @@ function createPrecipitationSystem({
     phases,
     count,
   };
+}
+
+function createRainTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 128;
+  const context = canvas.getContext('2d');
+  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, 'rgba(220, 240, 255, 0)');
+  gradient.addColorStop(0.18, 'rgba(220, 240, 255, 0.35)');
+  gradient.addColorStop(0.72, 'rgba(235, 247, 255, 0.95)');
+  gradient.addColorStop(1, 'rgba(235, 247, 255, 0)');
+  context.strokeStyle = gradient;
+  context.lineWidth = 3;
+  context.beginPath();
+  context.moveTo(4, 0);
+  context.lineTo(28, canvas.height);
+  context.stroke();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createLightningBolt(x, z) {
+  const vertices = [];
+  const mainPoints = [new THREE.Vector3(x, WEATHER_MAX_HEIGHT + 8, z)];
+  let current = mainPoints[0].clone();
+  const segments = 13;
+
+  for (let index = 1; index <= segments; index += 1) {
+    const next = new THREE.Vector3(
+      current.x + randomFloat(-2.3, 2.3),
+      THREE.MathUtils.lerp(WEATHER_MAX_HEIGHT + 8, 0.25, index / segments),
+      current.z + randomFloat(-1.5, 1.5),
+    );
+    vertices.push(current.x, current.y, current.z, next.x, next.y, next.z);
+    mainPoints.push(next);
+    current = next;
+  }
+
+  for (let branch = 0; branch < 5; branch += 1) {
+    const startIndex = Math.floor(randomFloat(2, segments - 2));
+    let branchPoint = mainPoints[startIndex].clone();
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    const branchSegments = Math.floor(randomFloat(2, 5));
+
+    for (let index = 0; index < branchSegments; index += 1) {
+      const next = new THREE.Vector3(
+        branchPoint.x + direction * randomFloat(1.3, 3.2),
+        branchPoint.y - randomFloat(1.2, 3.4),
+        branchPoint.z + randomFloat(-2.2, 2.2),
+      );
+      vertices.push(branchPoint.x, branchPoint.y, branchPoint.z, next.x, next.y, next.z);
+      branchPoint = next;
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  const material = new THREE.LineBasicMaterial({
+    color: '#eaf2ff',
+    transparent: true,
+    opacity: 0.98,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  return new THREE.LineSegments(geometry, material);
 }
 
 function updateRainSystem(system, delta) {

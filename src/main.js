@@ -156,9 +156,9 @@ app.innerHTML = `
               <i class="fa-solid fa-sun" aria-hidden="true"></i>
               <span>Sunny</span>
             </button>
-            <button id="weather-rain" type="button" title="Set rain">
-              <i class="fa-solid fa-cloud-rain" aria-hidden="true"></i>
-              <span>Rain</span>
+            <button id="weather-rain" type="button" title="Set thunderstorm weather">
+              <i class="fa-solid fa-cloud-bolt" aria-hidden="true"></i>
+              <span>Storm</span>
             </button>
             <button id="weather-snow" type="button" title="Set snow">
               <i class="fa-solid fa-snowflake" aria-hidden="true"></i>

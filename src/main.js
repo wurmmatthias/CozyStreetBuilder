@@ -98,6 +98,21 @@ app.innerHTML = `
           <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
         </div>
       </section>
+
+      <section class="confirm-overlay" id="main-menu-confirm" aria-labelledby="main-menu-confirm-title" aria-describedby="main-menu-confirm-message" aria-modal="true" role="dialog" hidden>
+        <div class="confirm-card">
+          <span class="confirm-icon" aria-hidden="true"><i class="fa-solid fa-house"></i></span>
+          <div>
+            <p class="eyebrow">Leave town?</p>
+            <h2 id="main-menu-confirm-title">Return to Main Menu</h2>
+          </div>
+          <p id="main-menu-confirm-message">Any unsaved changes will be lost. Export or save first if you want to keep this town.</p>
+          <div class="confirm-actions">
+            <button class="escape-button" id="cancel-main-menu" type="button">Keep Building</button>
+            <button class="escape-button danger" id="confirm-main-menu" type="button">Return to Menu</button>
+          </div>
+        </div>
+      </section>
       <input id="town-file-input" type="file" accept="application/json,.json,.cozytown" hidden />
 
       <div class="hud-root" aria-label="Street builder interface">
@@ -517,6 +532,9 @@ const escapeOverlay = document.querySelector('#escape-overlay');
 const escapeToggle = document.querySelector('#escape-toggle');
 const escapeSummary = document.querySelector('#escape-summary');
 const saveStatus = document.querySelector('#save-status');
+const mainMenuConfirm = document.querySelector('#main-menu-confirm');
+const cancelMainMenu = document.querySelector('#cancel-main-menu');
+const confirmMainMenu = document.querySelector('#confirm-main-menu');
 const townFileInput = document.querySelector('#town-file-input');
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const TAX_CYCLE_MS = 10000;
@@ -871,9 +889,22 @@ function loadSavedTown() {
 }
 
 function returnToMainMenu() {
-  if (controller.placed.length > 0 && !window.confirm('Return to the main menu? Export or save first if you want to keep this town.')) {
+  if (controller.placed.length > 0) {
+    mainMenuConfirm.hidden = false;
+    cancelMainMenu.focus();
     return;
   }
+
+  completeReturnToMainMenu();
+}
+
+function cancelReturnToMainMenu() {
+  mainMenuConfirm.hidden = true;
+  document.querySelector('#return-main-menu').focus();
+}
+
+function completeReturnToMainMenu() {
+  mainMenuConfirm.hidden = true;
 
   escapeOverlay.hidden = true;
   escapeToggle.setAttribute('aria-expanded', 'false');
@@ -1349,6 +1380,8 @@ document.querySelector('#import-town').addEventListener('click', () => {
   townFileInput.click();
 });
 document.querySelector('#return-main-menu').addEventListener('click', returnToMainMenu);
+cancelMainMenu.addEventListener('click', cancelReturnToMainMenu);
+confirmMainMenu.addEventListener('click', completeReturnToMainMenu);
 townFileInput.addEventListener('change', async () => {
   const file = townFileInput.files?.[0];
   const requestedFromMenu = townFileInput.dataset.source === 'menu';
@@ -1443,8 +1476,10 @@ document.addEventListener('click', (event) => {
   setDayNightPanelOpen(false);
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Tab' && !escapeOverlay.hidden) {
-    const focusable = [...escapeOverlay.querySelectorAll('button:not(:disabled)')];
+  const activeModal = !mainMenuConfirm.hidden ? mainMenuConfirm : (!escapeOverlay.hidden ? escapeOverlay : null);
+
+  if (event.key === 'Tab' && activeModal) {
+    const focusable = [...activeModal.querySelectorAll('button:not(:disabled)')];
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
@@ -1465,6 +1500,11 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
   event.stopPropagation();
   setDayNightPanelOpen(false);
+
+  if (!mainMenuConfirm.hidden) {
+    cancelReturnToMainMenu();
+    return;
+  }
 
   if (shell.dataset.screen !== 'game') {
     return;

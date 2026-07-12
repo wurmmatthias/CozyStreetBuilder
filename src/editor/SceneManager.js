@@ -101,6 +101,9 @@ export class SceneManager {
     this.weatherSkyColor = new THREE.Color();
     this.weatherFogColor = new THREE.Color();
     this.weatherGroundColor = new THREE.Color();
+    this.lightningSkyColor = new THREE.Color('#dce8ff');
+    this.lightningFogColor = new THREE.Color('#c8d8ed');
+    this.lightningGroundColor = new THREE.Color('#aebfd0');
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
     this.camera.position.set(18, 18, 18);
@@ -372,7 +375,7 @@ export class SceneManager {
     this.lightningGroup = new THREE.Group();
     this.lightningGroup.name = 'Lightning';
     this.lightningGroup.visible = false;
-    this.lightningFlash = new THREE.PointLight('#dbe9ff', 0, 130, 1.35);
+    this.lightningFlash = new THREE.PointLight('#dbe9ff', 0, 150, 1.15);
     this.lightningFlash.position.set(0, 30, 0);
 
     this.rainSystem.points.name = 'Rain';
@@ -412,8 +415,26 @@ export class SceneManager {
     const firstFlash = Math.max(0, 1 - age / 0.105);
     const secondFlash = age > 0.16 ? Math.max(0, 1 - (age - 0.16) / 0.18) * 0.72 : 0;
     const flash = Math.max(firstFlash, secondFlash);
-    this.lightningFlash.intensity = flash * 34;
+    const worldFlash = smoothstep(0, 1, flash);
+    this.lightningFlash.intensity = worldFlash * 95;
     this.lightningGroup.visible = age < LIGHTNING_FLASH_DURATION && (age < 0.11 || (age > 0.16 && age < 0.36));
+
+    if (worldFlash > 0) {
+      // The storm environment is recalculated immediately before this updater,
+      // so these additions naturally disappear as soon as the flash fades.
+      this.scene.background.lerp(this.lightningSkyColor, worldFlash * 0.82);
+      this.scene.fog.color.lerp(this.lightningFogColor, worldFlash * 0.68);
+      this.ground.material.color.lerp(this.lightningGroundColor, worldFlash * 0.38);
+      this.hemiLight.intensity += worldFlash * 5.6;
+      this.sunLight.intensity += worldFlash * 7.5;
+      this.sunLight.color.setRGB(
+        THREE.MathUtils.lerp(1, 0.82, worldFlash),
+        THREE.MathUtils.lerp(1, 0.9, worldFlash),
+        1,
+      );
+    } else {
+      this.sunLight.color.set('#fff2d5');
+    }
   }
 
   triggerLightningStrike() {
@@ -470,6 +491,7 @@ export class SceneManager {
       this.lightningGroup.visible = false;
       this.lightningFlash.intensity = 0;
       this.lightningAge = Infinity;
+      this.sunLight.color.set('#fff2d5');
     } else if (nextWeather === 'rain') {
       this.lightningTimer = randomFloat(1.5, 5.5);
     }

@@ -779,7 +779,12 @@ export class SceneManager {
       if (trail.points.length > AIRPLANE_TRAIL_POINTS) {
         trail.points.pop();
       }
-      trail.line.geometry.setFromPoints(trail.points);
+      const positionAttribute = trail.line.geometry.attributes.position;
+      trail.points.forEach((point, index) => {
+        positionAttribute.setXYZ(index, point.x, point.y, point.z);
+      });
+      positionAttribute.needsUpdate = true;
+      trail.line.geometry.setDrawRange(0, trail.points.length);
       trail.line.material.opacity = Math.min(trail.points.length / 10, 0.42);
     });
   }
@@ -1151,10 +1156,12 @@ function createAirplaneRoute() {
 }
 
 function createAirplaneTrail(side) {
-  const geometry = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-  ]);
+  const positions = new Float32Array(AIRPLANE_TRAIL_POINTS * 3);
+  const geometry = new THREE.BufferGeometry();
+  const positionAttribute = new THREE.BufferAttribute(positions, 3);
+  positionAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('position', positionAttribute);
+  geometry.setDrawRange(0, 0);
   const material = new THREE.PointsMaterial({
     color: '#f7fbff',
     map: createSoftParticleTexture(),

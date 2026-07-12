@@ -120,6 +120,14 @@ export const assetPacks = [
     rotationStep: 45,
   },
   {
+    id: 'dark-tree',
+    name: 'Dark Tree',
+    url: assetUrl('/assets/misc/DarkTree.glb'),
+    kind: 'foliage',
+    scale: 1,
+    rotationStep: 45,
+  },
+  {
     id: 'pine-trees',
     name: 'Pine Trees',
     url: assetUrl('/assets/misc/Pine%20Trees.glb'),

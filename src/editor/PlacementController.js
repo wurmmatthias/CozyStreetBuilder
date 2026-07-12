@@ -1054,7 +1054,10 @@ export class PlacementController {
       }
     });
 
-    this.fireIncidents.forEach((incident) => animateBuildingFire(incident, delta, now));
+    this.fireIncidents.forEach((incident) => {
+      animateBuildingFire(incident, delta, now);
+      this.updateFireAlertPosition(incident);
+    });
 
     if (!this.fireSimulationEnabled || this.fireIncidents.length >= MAX_ACTIVE_FIRES) {
       return;
@@ -1094,6 +1097,7 @@ export class PlacementController {
     }
 
     const incident = createBuildingFireIncident(building, this.fireAsset);
+    incident.alertButton = this.createFireAlertButton(incident);
     building.userData.fireIncident = incident;
     this.fireIncidents.push(incident);
     return incident;
@@ -1111,9 +1115,58 @@ export class PlacementController {
     }
 
     building.remove(incident.group);
+    incident.alertButton?.remove();
     disposeObject3D(incident.group);
     delete building.userData.fireIncident;
     this.fireIncidents = this.fireIncidents.filter((item) => item !== incident);
+  }
+
+  createFireAlertButton(incident) {
+    if (!this.elements.worldAlerts) {
+      return null;
+    }
+
+    const button = document.createElement('button');
+    button.className = 'world-fire-alert';
+    button.type = 'button';
+    button.title = `Respond to fire at ${incident.building.userData.assetName}`;
+    button.setAttribute('aria-label', button.title);
+    button.innerHTML = '<span class="world-fire-alert-emoji" aria-hidden="true">🔥</span>';
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.selectFire(incident.building);
+    });
+    this.elements.worldAlerts.append(button);
+    return button;
+  }
+
+  updateFireAlertPosition(incident) {
+    const button = incident.alertButton;
+
+    if (!button) {
+      return;
+    }
+
+    const worldPosition = incident.group.localToWorld(incident.alertAnchor.clone());
+    const cameraPosition = this.sceneManager.camera.position;
+    const cameraDirection = this.sceneManager.camera.getWorldDirection(new THREE.Vector3());
+    const isInFront = worldPosition.clone().sub(cameraPosition).dot(cameraDirection) > 0;
+    const projected = worldPosition.project(this.sceneManager.camera);
+    const isVisible = isInFront
+      && projected.z >= -1 && projected.z <= 1
+      && projected.x >= -1.12 && projected.x <= 1.12
+      && projected.y >= -1.12 && projected.y <= 1.12;
+
+    button.hidden = !isVisible;
+
+    if (!isVisible) {
+      return;
+    }
+
+    button.style.left = `${(projected.x * 0.5 + 0.5) * 100}%`;
+    button.style.top = `${(-projected.y * 0.5 + 0.5) * 100}%`;
+    button.classList.toggle('is-selected', this.selectedFire === incident.building);
+    button.classList.toggle('is-dispatched', incident.truckDispatched);
   }
 
   clearAllFireIncidents() {
@@ -1338,6 +1391,8 @@ function createBuildingFireIncident(building, fireAsset) {
     group,
     fireModels,
     smokePuffs,
+    alertAnchor: new THREE.Vector3(0, roof.y + 2.15, 0),
+    alertButton: null,
     truckDispatched: false,
   };
 }

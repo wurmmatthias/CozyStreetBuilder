@@ -11,6 +11,7 @@ app.innerHTML = `
   <main class="builder-shell" data-mode="build" data-play-mode="sandbox" data-screen="menu" data-ui="expanded">
     <section class="viewport-wrap">
       <div id="viewport" class="viewport" aria-label="3D street builder viewport"></div>
+      <div id="world-alerts" class="world-alerts" aria-label="3D scene alerts"></div>
 
       <section class="main-menu" aria-label="Main menu">
         <div class="main-menu-content">
@@ -425,6 +426,7 @@ const controller = new PlacementController(scene, {
   fireStatus: document.querySelector('#fire-status'),
   fireLocation: document.querySelector('#fire-location'),
   dispatchFireTruck: document.querySelector('#dispatch-fire-truck'),
+  worldAlerts: document.querySelector('#world-alerts'),
   canPlaceAsset: (asset) => canAffordAsset(asset, true),
   onAssetPlaced: (asset) => purchaseAsset(asset),
   onTownChanged: () => updateEconomyHud(),

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { SceneManager } from './editor/SceneManager.js';
 import { PlacementController } from './editor/PlacementController.js';
 import { assetPacks } from './editor/assetCatalog.js';
+import patchNotes from './patchNotes.json';
 
 const app = document.querySelector('#app');
 
@@ -62,8 +63,28 @@ app.innerHTML = `
             </p>
           </div>
         </div>
-        <span class="main-menu-version" aria-label="Application version">${__APP_VERSION__}</span>
+        <div class="main-menu-version">
+          <span aria-label="Application version">${__APP_VERSION__}</span>
+          <button class="patch-notes-button" id="open-patch-notes" type="button" aria-label="View patch notes" title="Patch notes">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          </button>
+        </div>
       </section>
+
+      <dialog class="patch-notes-dialog" id="patch-notes-dialog" aria-labelledby="patch-notes-title">
+        <div class="patch-notes-card">
+          <header class="patch-notes-header">
+            <div>
+              <p class="eyebrow">What's new</p>
+              <h2 id="patch-notes-title">Patch Notes</h2>
+            </div>
+            <button class="patch-notes-close" id="close-patch-notes" type="button" aria-label="Close patch notes" title="Close">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </header>
+          <div class="patch-notes-list" id="patch-notes-list"></div>
+        </div>
+      </dialog>
 
       <section class="escape-overlay" id="escape-overlay" aria-label="Paused game menu" aria-modal="true" role="dialog" hidden>
         <div class="escape-card">
@@ -434,6 +455,50 @@ app.innerHTML = `
 `;
 
 const shell = document.querySelector('.builder-shell');
+const patchNotesDialog = document.querySelector('#patch-notes-dialog');
+const patchNotesList = document.querySelector('#patch-notes-list');
+const openPatchNotes = document.querySelector('#open-patch-notes');
+const closePatchNotes = document.querySelector('#close-patch-notes');
+
+Object.entries(patchNotes)
+  .sort(([versionA], [versionB]) => versionB.localeCompare(versionA, undefined, { numeric: true }))
+  .forEach(([version, release], index) => {
+    const section = document.createElement('section');
+    section.className = 'patch-notes-release';
+
+    const heading = document.createElement('h3');
+    heading.textContent = `Version ${version}${version === __APP_RELEASE_VERSION__ ? ' · Current' : ''}`;
+    section.append(heading);
+
+    if (release.date) {
+      const date = document.createElement('time');
+      date.dateTime = release.date;
+      date.textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(`${release.date}T12:00:00`));
+      section.append(date);
+    }
+
+    const changes = document.createElement('ul');
+    release.changes.forEach((change) => {
+      const item = document.createElement('li');
+      item.textContent = change;
+      changes.append(item);
+    });
+    section.append(changes);
+
+    if (index > 0) {
+      section.classList.add('is-older');
+    }
+    patchNotesList.append(section);
+  });
+
+openPatchNotes.addEventListener('click', () => patchNotesDialog.showModal());
+closePatchNotes.addEventListener('click', () => patchNotesDialog.close());
+patchNotesDialog.addEventListener('click', (event) => {
+  if (event.target === patchNotesDialog) {
+    patchNotesDialog.close();
+  }
+});
+
 const scene = new SceneManager(document.querySelector('#viewport'));
 const controller = new PlacementController(scene, {
   assetGrid: document.querySelector('#asset-grid'),
@@ -1587,6 +1652,11 @@ document.addEventListener('keydown', (event) => {
   }
 
   if (event.key !== 'Escape') {
+    return;
+  }
+
+  if (patchNotesDialog.open) {
+    patchNotesDialog.close();
     return;
   }
 

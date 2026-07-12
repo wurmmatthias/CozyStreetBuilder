@@ -2,7 +2,7 @@
 
 Cozy Street Builder is a small Three.js city builder for creating cute low-poly streets, roads, buildings, traffic, and little town scenes directly in the browser.
 
-The main menu displays the version from `package.json`. GitHub Pages deployments automatically add the Actions build number and short commit SHA; local builds are labeled as development builds. Bump the release portion with `npm version patch`, `npm version minor`, or `npm version major` when appropriate.
+The main menu displays the version from `package.json`. GitHub Pages deployments automatically add the Actions build number and short commit SHA; local builds are labeled as development builds. Bump the release portion with `npm version patch`, `npm version minor`, or `npm version major` when appropriate, then add the matching release entry to `src/patchNotes.json`. Builds fail when the current version has no patch notes.
 
 ## Features
 

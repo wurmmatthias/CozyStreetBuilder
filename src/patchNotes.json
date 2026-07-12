@@ -1,0 +1,10 @@
+{
+  "0.3.1": {
+    "date": "2026-07-12",
+    "changes": [
+      "Added the Cozy Street Builder favicon.",
+      "Added population growth, housing capacity, and population status to normal mode.",
+      "Improved lightning lighting effects during storms."
+    ]
+  }
+}

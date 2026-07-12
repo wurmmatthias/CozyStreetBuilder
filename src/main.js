@@ -13,6 +13,13 @@ app.innerHTML = `
       <div id="viewport" class="viewport" aria-label="3D street builder viewport"></div>
       <div id="world-alerts" class="world-alerts" aria-label="3D scene alerts"></div>
 
+      <section class="town-generation-overlay" id="town-generation-overlay" aria-label="Generating town" aria-live="polite" aria-modal="true" role="dialog" hidden>
+        <div class="town-generation-card">
+          <span class="town-generation-spinner" aria-hidden="true"></span>
+          <p>Generating town...</p>
+        </div>
+      </section>
+
       <section class="main-menu" aria-label="Main menu">
         <div class="main-menu-content">
           <h1 class="main-menu-title">
@@ -480,6 +487,7 @@ const weatherButtons = {
   random: document.querySelector('#weather-random'),
 };
 const startSandbox = document.querySelector('#start-sandbox');
+const townGenerationOverlay = document.querySelector('#town-generation-overlay');
 const startNormal = document.querySelector('#start-normal');
 const continueTown = document.querySelector('#continue-town');
 const menuImportTown = document.querySelector('#menu-import-town');
@@ -949,8 +957,9 @@ function generateMainMenuTown() {
   startMainMenuBuildAnimation();
 }
 
-function startMainMenuBuildAnimation() {
+function startMainMenuBuildAnimation({ ambientAfter = true, onComplete = null } = {}) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    onComplete?.();
     return;
   }
 
@@ -967,6 +976,8 @@ function startMainMenuBuildAnimation() {
   mainMenuBuildAnimation = {
     elapsed: 0,
     ambient: false,
+    ambientAfter,
+    onComplete,
     nextChange: 0,
     items: shuffledObjects.map(({ object }, index) => {
       const baseScale = object.scale.clone();
@@ -996,13 +1007,11 @@ function stopMainMenuBuildAnimation({ finish = false } = {}) {
 }
 
 function updateMainMenuBackdrop(delta) {
-  if (shell.dataset.screen !== 'menu') {
-    return;
+  if (shell.dataset.screen === 'menu') {
+    const offset = scene.camera.position.clone().sub(scene.controls.target);
+    offset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, MAIN_MENU_CAMERA_SPEED * delta);
+    scene.camera.position.copy(scene.controls.target).add(offset);
   }
-
-  const offset = scene.camera.position.clone().sub(scene.controls.target);
-  offset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, MAIN_MENU_CAMERA_SPEED * delta);
-  scene.camera.position.copy(scene.controls.target).add(offset);
 
   if (!mainMenuBuildAnimation) {
     return;
@@ -1025,14 +1034,42 @@ function updateMainMenuBackdrop(delta) {
   });
 
   if (animationComplete) {
-    mainMenuBuildAnimation.ambient = true;
-    mainMenuBuildAnimation.nextChange = 0.45;
-    mainMenuBuildAnimation.items.forEach((item) => {
+    const completedAnimation = mainMenuBuildAnimation;
+    completedAnimation.items.forEach((item) => {
       item.phase = 'idle';
       item.object.scale.copy(item.baseScale);
       item.object.position.y = item.baseY;
     });
+    completedAnimation.onComplete?.();
+    if (completedAnimation.ambientAfter) {
+      completedAnimation.ambient = true;
+      completedAnimation.nextChange = 0.45;
+    } else {
+      mainMenuBuildAnimation = null;
+    }
   }
+}
+
+function generateSandboxTown() {
+  if (!townGenerationOverlay.hidden) {
+    return;
+  }
+
+  townGenerationOverlay.hidden = false;
+  document.querySelector('#generate-town').disabled = true;
+
+  requestAnimationFrame(() => {
+    controller.generateTown();
+    controller.select(null);
+    controller.clearGhost();
+    startMainMenuBuildAnimation({
+      ambientAfter: false,
+      onComplete: () => {
+        townGenerationOverlay.hidden = true;
+        document.querySelector('#generate-town').disabled = false;
+      },
+    });
+  });
 }
 
 function updateMainMenuTownChanges(delta) {
@@ -1579,7 +1616,7 @@ document.querySelector('#rotate-right').addEventListener('click', () => controll
 document.querySelector('#duplicate').addEventListener('click', () => controller.duplicateSelected());
 document.querySelector('#delete-selected').addEventListener('click', () => controller.deleteSelected());
 document.querySelector('#reload-assets').addEventListener('click', () => controller.loadAssets(assetPacks));
-document.querySelector('#generate-town').addEventListener('click', () => controller.generateTown());
+document.querySelector('#generate-town').addEventListener('click', generateSandboxTown);
 document.querySelector('#clear-town').addEventListener('click', () => controller.clearTown());
 
 updateContinueButton();

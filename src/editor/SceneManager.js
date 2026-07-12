@@ -1095,7 +1095,7 @@ function createStreetlightFixture(object) {
   const scale = object.userData.assetScale ?? 1;
   const materials = [];
   const lampPosition = new THREE.Vector3(0, 2.48 * scale, 0.28 * scale);
-  const roadPosition = new THREE.Vector3(0, 0.025, 1.54 * scale);
+  const roadPosition = new THREE.Vector3(0, 0.025, 1.7 * scale);
   const lampToRoad = roadPosition.clone().sub(lampPosition);
   const beamHeight = lampToRoad.length();
   const beamDirection = lampToRoad.clone().normalize();
@@ -1116,10 +1116,10 @@ function createStreetlightFixture(object) {
     side: THREE.DoubleSide,
   });
   const beam = new THREE.Mesh(
-    new THREE.ConeGeometry(0.5 * scale, beamHeight, 14, 1, true),
+    new THREE.ConeGeometry(0.66 * scale, beamHeight, 18, 1, true),
     beamMaterial,
   );
-  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 18), poolMaterial);
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 24), poolMaterial);
 
   group.name = 'Streetlight Night Lighting';
   beam.name = 'Streetlight Beam';
@@ -1132,7 +1132,7 @@ function createStreetlightFixture(object) {
   beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), beamDirection);
   pool.position.copy(roadPosition);
   pool.rotation.x = -Math.PI / 2;
-  pool.scale.set(0.62 * scale, 1.36 * scale, 1);
+  pool.scale.set(0.78 * scale, 1.5 * scale, 1);
   group.add(beam, pool);
 
   object.traverse((child) => {

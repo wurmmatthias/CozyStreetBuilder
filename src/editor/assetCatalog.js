@@ -27,6 +27,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 240,
+    housingCapacity: 8,
   },
   {
     id: 'low-building',
@@ -36,6 +37,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 320,
+    housingCapacity: 12,
   },
   {
     id: 'large-building',
@@ -45,6 +47,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 620,
+    housingCapacity: 24,
   },
   {
     id: 'building-red',
@@ -54,6 +57,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 460,
+    housingCapacity: 16,
   },
   {
     id: 'big-building',
@@ -63,6 +67,7 @@ export const assetPacks = [
     scale: 0.8,
     rotationStep: 90,
     cost: 760,
+    housingCapacity: 32,
     generationRole: 'midrise',
     generationWeight: 1.15,
   },
@@ -74,6 +79,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 680,
+    housingCapacity: 20,
   },
   {
     id: 'pizza-corner',
@@ -92,6 +98,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 1200,
+    housingCapacity: 60,
   },
   {
     id: 'skyscraper-2',
@@ -101,6 +108,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 1400,
+    housingCapacity: 72,
   },
   {
     id: 'skyscraper-3',
@@ -110,6 +118,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 1600,
+    housingCapacity: 84,
   },
   {
     id: 'tree',

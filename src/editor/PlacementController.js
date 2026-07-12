@@ -153,6 +153,7 @@ export class PlacementController {
         generationRole: pack.generationRole ?? null,
         generationWeight: pack.generationWeight ?? 1,
         cost: pack.cost ?? 0,
+        housingCapacity: pack.housingCapacity ?? 0,
         trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
         personForwardAxis: pack.personForwardAxis ?? 'z',
         personGender: pack.personGender ?? 'neutral',

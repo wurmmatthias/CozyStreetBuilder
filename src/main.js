@@ -326,6 +326,16 @@ app.innerHTML = `
             <input id="tax-rate" type="range" min="0" max="20" value="8" step="1" />
             <output id="tax-rate-value">8%</output>
           </label>
+          <div class="population-block">
+            <div class="population-heading">
+              <span><i class="fa-solid fa-people-roof" aria-hidden="true"></i> Population</span>
+              <strong><span id="population-value">0</span> / <span id="housing-capacity-value">0</span></strong>
+            </div>
+            <div class="population-track" role="progressbar" aria-label="Housing occupancy" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+              <span id="population-fill"></span>
+            </div>
+            <p id="population-note">Build housing to welcome your first residents.</p>
+          </div>
           <div class="happiness-block">
             <div class="happiness-heading">
               <span><i class="fa-solid fa-face-smile" aria-hidden="true"></i> Happiness</span>
@@ -528,6 +538,11 @@ const taxHappinessScore = document.querySelector('#tax-happiness-score');
 const foliageHappinessScore = document.querySelector('#foliage-happiness-score');
 const roadHappinessScore = document.querySelector('#road-happiness-score');
 const economyHud = document.querySelector('#economy-hud');
+const populationValue = document.querySelector('#population-value');
+const housingCapacityValue = document.querySelector('#housing-capacity-value');
+const populationFill = document.querySelector('#population-fill');
+const populationTrack = document.querySelector('.population-track');
+const populationNote = document.querySelector('#population-note');
 const escapeOverlay = document.querySelector('#escape-overlay');
 const escapeToggle = document.querySelector('#escape-toggle');
 const escapeSummary = document.querySelector('#escape-summary');
@@ -544,6 +559,8 @@ let economyEnabled = false;
 let assetsReady = false;
 let balance = 2500;
 let happiness = 54;
+let population = 0;
+let fullHousingCycles = 0;
 let taxTimer = null;
 
 function getAssetCost(asset) {
@@ -558,9 +575,53 @@ function getTownCounts() {
   }, {});
 }
 
+function getHousingCapacity() {
+  const assetsById = new Map(controller.assets.map((asset) => [asset.id, asset]));
+  return controller.placed.reduce((capacity, object) => (
+    capacity + (Number(assetsById.get(object.userData.assetId)?.housingCapacity) || 0)
+  ), 0);
+}
+
 function getTaxIncome() {
   const buildingCount = getTownCounts().building ?? 0;
-  return Math.round(buildingCount * 25 * (Number(taxRate.value) / 10));
+  const rateMultiplier = Number(taxRate.value) / 10;
+  return Math.round((buildingCount * 25 + population * 3) * rateMultiplier);
+}
+
+function updatePopulation() {
+  const capacity = getHousingCapacity();
+
+  if (population > capacity) {
+    population = Math.max(capacity, population - Math.max(1, Math.ceil((population - capacity) / 2)));
+    return;
+  }
+
+  const availableHomes = capacity - population;
+  if (availableHomes <= 0 || happiness < 35) {
+    if (happiness < 35 && population > 0) {
+      population = Math.max(0, population - 1);
+    }
+    return;
+  }
+
+  const arrivals = Math.max(1, Math.floor((happiness - 25) / 12));
+  population += Math.min(availableHomes, arrivals);
+}
+
+function updateHousingPressure() {
+  const capacity = getHousingCapacity();
+  const housingIsFull = capacity > 0 && population >= capacity;
+
+  if (housingIsFull) {
+    fullHousingCycles = Math.min(12, fullHousingCycles + 1);
+  } else {
+    fullHousingCycles = Math.max(0, fullHousingCycles - 2);
+  }
+}
+
+function getHousingHappinessPenalty() {
+  const graceCycles = 2;
+  return Math.max(0, fullHousingCycles - graceCycles) * 4;
 }
 
 function getHappinessFactors(counts, rate) {
@@ -624,8 +685,12 @@ function updateEconomyHud() {
   const rate = Number(taxRate.value);
   const counts = getTownCounts();
   const factors = getHappinessFactors(counts, rate);
-  happiness = factors.taxes * 0.4 + factors.foliage * 0.3 + factors.roads * 0.3;
+  const housingPenalty = getHousingHappinessPenalty();
+  const baseHappiness = factors.taxes * 0.4 + factors.foliage * 0.3 + factors.roads * 0.3;
+  happiness = clamp(baseHappiness - housingPenalty, 0, 100);
   const income = getTaxIncome();
+  const housingCapacity = getHousingCapacity();
+  const occupancy = housingCapacity > 0 ? population / housingCapacity : 0;
 
   economyBalance.textContent = currency.format(balance);
   taxRateValue.value = `${rate}%`;
@@ -636,6 +701,24 @@ function updateEconomyHud() {
   taxHappinessScore.textContent = Math.round(factors.taxes);
   foliageHappinessScore.textContent = Math.round(factors.foliage);
   roadHappinessScore.textContent = Math.round(factors.roads);
+  populationValue.textContent = String(population);
+  housingCapacityValue.textContent = String(housingCapacity);
+  populationFill.style.width = `${Math.min(100, occupancy * 100)}%`;
+  populationTrack.setAttribute('aria-valuemax', String(housingCapacity));
+  populationTrack.setAttribute('aria-valuenow', String(population));
+  populationTrack.classList.toggle('is-full', housingCapacity > 0 && population >= housingCapacity);
+  populationTrack.classList.toggle('is-overcrowded', population > housingCapacity);
+  populationNote.textContent = housingCapacity === 0
+    ? 'Build housing to welcome your first residents.'
+    : population > housingCapacity
+      ? `Housing shortage: add room for ${population - housingCapacity} residents.`
+      : population === housingCapacity
+        ? housingPenalty > 0
+          ? `Housing has been full too long, reducing happiness by ${housingPenalty} points.`
+          : 'Housing is full. Build more homes before residents become unhappy.'
+        : happiness < 35
+          ? 'Residents are leaving because happiness is too low.'
+          : `${housingCapacity - population} homes available. Higher happiness attracts residents faster.`;
 
   const weakestFactor = [
     { score: factors.taxes, note: 'Lowering taxes would give residents more breathing room.' },
@@ -643,9 +726,11 @@ function updateEconomyHud() {
     { score: factors.roads, note: `Expand the road network (${factors.roadCount}/${factors.roadTarget} recommended pieces).` },
   ].sort((a, b) => a.score - b.score)[0];
 
-  happinessNote.textContent = happiness >= 90
-    ? 'Residents love the balance of taxes, greenery, and infrastructure.'
-    : weakestFactor.note;
+  happinessNote.textContent = housingPenalty > 0
+    ? `Long-term housing pressure is lowering happiness. Add capacity to relieve it.`
+    : happiness >= 90
+      ? 'Residents love the balance of taxes, greenery, and infrastructure.'
+      : weakestFactor.note;
   economyHud.dataset.mood = happiness >= 60 ? 'happy' : happiness >= 40 ? 'uneasy' : 'unhappy';
   controller.refreshAssetButtons();
 }
@@ -655,8 +740,10 @@ function collectTaxes() {
     return;
   }
 
-  const income = getTaxIncome();
-  balance += income;
+  updatePopulation();
+  updateHousingPressure();
+  const updatedIncome = getTaxIncome();
+  balance += updatedIncome;
   updateEconomyHud();
   economyHud.classList.remove('is-paying');
   requestAnimationFrame(() => economyHud.classList.add('is-paying'));
@@ -670,6 +757,8 @@ function setEconomyEnabled(enabled, reset = true) {
 
   if (enabled && reset) {
     balance = 2500;
+    population = 0;
+    fullHousingCycles = 0;
     taxRate.value = '8';
   }
 
@@ -698,6 +787,8 @@ function createTownSave() {
         balance,
         taxRate: Number(taxRate.value),
         happiness,
+        population,
+        fullHousingCycles,
       },
       trafficDensity: Number(trafficDensity.value) / 100,
       environment: scene.getEnvironmentState(),
@@ -850,6 +941,8 @@ function applyTownSave(rawSave) {
 
   if (normalMode) {
     balance = Number.isFinite(town.economy?.balance) ? town.economy.balance : 2500;
+    population = Math.max(0, Math.round(finiteNumber(town.economy?.population, 0)));
+    fullHousingCycles = clamp(Math.round(finiteNumber(town.economy?.fullHousingCycles, 0)), 0, 12);
     taxRate.value = String(clamp(finiteNumber(town.economy?.taxRate, 8), 0, 20));
   }
 

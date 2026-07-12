@@ -490,7 +490,8 @@ const menuFullscreen = document.querySelector('#menu-fullscreen');
 const backgroundMusic = new Audio(assetUrl('/assets/sounds/bg.mp3'));
 let mainMenuTownActive = false;
 let mainMenuBuildAnimation = null;
-const mainMenuCameraTarget = new THREE.Vector3(0, 1.5, 0);
+const mainMenuCameraTarget = new THREE.Vector3(0, 2.5, 0);
+const mainMenuCameraPosition = new THREE.Vector3(13, 8.5, 13);
 const MAIN_MENU_CAMERA_SPEED = 0.055;
 const economyBalance = document.querySelector('#economy-balance');
 const taxRate = document.querySelector('#tax-rate');
@@ -933,6 +934,8 @@ function getGenerationOptionsFromControls() {
 
 function generateMainMenuTown() {
   stopMainMenuBuildAnimation();
+  scene.setTimeFrozen(true);
+  scene.setDayTime();
   controller.setGenerationOptions(getGenerationOptionsFromControls());
   controller.setTrafficDensity(Number(generateTrafficDensity.value) / 100);
   controller.generateTown();
@@ -941,7 +944,7 @@ function generateMainMenuTown() {
   mainMenuTownActive = true;
 
   scene.controls.target.copy(mainMenuCameraTarget);
-  scene.camera.position.set(18, 14, 18);
+  scene.camera.position.copy(mainMenuCameraPosition);
   scene.controls.update();
   startMainMenuBuildAnimation();
 }
@@ -1100,6 +1103,7 @@ function clearMainMenuTown() {
 function enterGameMode(mode) {
   shell.dataset.screen = 'game';
   clearMainMenuTown();
+  scene.setTimeFrozen(false);
   scene.setSimulationPaused(false);
   controller.setFireSimulationEnabled(true);
   setMode(mode);

@@ -125,6 +125,8 @@ dd {
   transition:
     opacity 180ms ease,
     visibility 180ms ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .main-menu-content {
@@ -237,6 +239,7 @@ dd {
   margin-bottom: -18px;
   filter: drop-shadow(0 14px 18px rgb(117 88 65 / 0.2));
   line-height: 0;
+  perspective: 900px;
   user-select: none;
 }
 
@@ -246,6 +249,26 @@ dd {
   max-height: 44vh;
   object-fit: contain;
   pointer-events: none;
+  transform-origin: 50% 58%;
+  animation: main-menu-logo-breathe 3.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes main-menu-logo-breathe {
+  0%,
+  100% {
+    transform: rotateX(0deg) rotateY(-1deg) scale3d(1, 1, 1);
+  }
+
+  50% {
+    transform: rotateX(-2deg) rotateY(1deg) scale3d(1.035, 1.035, 1.035);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-menu-title img {
+    animation: none;
+  }
 }
 
 .main-menu-box {

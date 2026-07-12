@@ -67,6 +67,7 @@ export class SceneManager {
     this.simulationPaused = false;
     this.fictionalMinutes = 8 * 60;
     this.isTimePaused = false;
+    this.isTimeFrozen = false;
     this.lastClockStep = -1;
     this.weather = 'sunny';
     this.isWeatherAuto = false;
@@ -195,7 +196,7 @@ export class SceneManager {
   }
 
   updateDayNightCycle(delta) {
-    if (!this.isTimePaused) {
+    if (!this.isTimePaused && !this.isTimeFrozen) {
       const minutesPerSecond = (24 * 60) / DAY_LENGTH_SECONDS;
       this.fictionalMinutes = (this.fictionalMinutes + delta * minutesPerSecond) % (24 * 60);
     }
@@ -300,6 +301,11 @@ export class SceneManager {
 
   toggleTimePaused() {
     this.setTimePaused(!this.isTimePaused);
+  }
+
+  setTimeFrozen(frozen) {
+    this.isTimeFrozen = Boolean(frozen);
+    this.updateDayNightCycle(0);
   }
 
   setSimulationPaused(paused) {

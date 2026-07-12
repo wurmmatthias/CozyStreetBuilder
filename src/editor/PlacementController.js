@@ -39,6 +39,7 @@ export class PlacementController {
     this.assets = [];
     this.placed = [];
     this.activeAsset = null;
+    this.activeAssetCategory = 'road';
     this.fireAsset = null;
     this.ghost = null;
     this.selected = null;
@@ -163,24 +164,55 @@ export class PlacementController {
   renderAssetButtons() {
     this.elements.assetGrid.innerHTML = '';
 
-    [
-      { kind: 'road', title: 'Roads' },
-      { kind: 'building', title: 'Buildings' },
-      { kind: 'foliage', title: 'Foliage' },
-      { kind: 'streetlight', title: 'Lighting' },
-    ].forEach((group) => {
-      const assets = this.assets.filter((asset) => asset.showInPalette !== false && asset.kind === group.kind);
+    const groups = [
+      { kind: 'road', title: 'Roads', icon: 'fa-road' },
+      { kind: 'building', title: 'Buildings', icon: 'fa-city' },
+      { kind: 'foliage', title: 'Foliage', icon: 'fa-tree' },
+      { kind: 'streetlight', title: 'Lighting', icon: 'fa-lightbulb' },
+    ].map((group) => ({
+      ...group,
+      assets: this.assets.filter((asset) => asset.showInPalette !== false && asset.kind === group.kind),
+    })).filter((group) => group.assets.length > 0);
 
-      if (assets.length === 0) {
-        return;
-      }
+    if (!groups.some((group) => group.kind === this.activeAssetCategory)) {
+      this.activeAssetCategory = groups[0]?.kind ?? null;
+    }
+
+    const tabs = document.createElement('div');
+    tabs.className = 'asset-tabs';
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Build categories');
+    this.elements.assetGrid.append(tabs);
+
+    groups.forEach((group) => {
+      const tabId = `asset-tab-${group.kind}`;
+      const panelId = `asset-panel-${group.kind}`;
+      const isActive = group.kind === this.activeAssetCategory;
+      const tab = document.createElement('button');
+      tab.className = 'asset-tab';
+      tab.type = 'button';
+      tab.id = tabId;
+      tab.dataset.assetCategory = group.kind;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', panelId);
+      tab.setAttribute('aria-selected', String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+      tab.innerHTML = `<i class="fa-solid ${group.icon}" aria-hidden="true"></i><span>${group.title}</span>`;
+      tab.addEventListener('click', () => this.selectAssetCategory(group.kind));
+      tab.addEventListener('keydown', (event) => this.onAssetTabKeyDown(event));
+      tabs.append(tab);
 
       const section = document.createElement('section');
       section.className = 'asset-group';
-      section.innerHTML = `<h3>${group.title}</h3><div class="asset-grid"></div>`;
+      section.id = panelId;
+      section.dataset.assetCategoryPanel = group.kind;
+      section.setAttribute('role', 'tabpanel');
+      section.setAttribute('aria-labelledby', tabId);
+      section.hidden = !isActive;
+      section.innerHTML = `<h3 class="visually-hidden">${group.title}</h3><div class="asset-grid"></div>`;
       const grid = section.querySelector('.asset-grid');
 
-      assets.forEach((asset) => {
+      group.assets.forEach((asset) => {
         const thumbnail = this.renderAssetThumbnail(asset);
         const button = document.createElement('button');
         button.className = 'asset-button';
@@ -198,6 +230,43 @@ export class PlacementController {
     });
 
     this.refreshAssetButtons();
+  }
+
+  selectAssetCategory(category, { focus = false } = {}) {
+    const tabs = [...this.elements.assetGrid.querySelectorAll('.asset-tab')];
+
+    if (!tabs.some((tab) => tab.dataset.assetCategory === category)) {
+      return;
+    }
+
+    this.activeAssetCategory = category;
+    tabs.forEach((tab) => {
+      const isActive = tab.dataset.assetCategory === category;
+      tab.setAttribute('aria-selected', String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+
+      if (isActive && focus) {
+        tab.focus();
+      }
+    });
+    this.elements.assetGrid.querySelectorAll('[data-asset-category-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.assetCategoryPanel !== category;
+    });
+  }
+
+  onAssetTabKeyDown(event) {
+    const tabs = [...this.elements.assetGrid.querySelectorAll('.asset-tab')];
+    const currentIndex = tabs.indexOf(event.currentTarget);
+    let nextIndex = currentIndex;
+
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+    if (nextIndex === currentIndex) return;
+
+    event.preventDefault();
+    this.selectAssetCategory(tabs[nextIndex].dataset.assetCategory, { focus: true });
   }
 
   refreshAssetButtons() {

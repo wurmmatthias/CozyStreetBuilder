@@ -153,13 +153,22 @@ export class PlacementController {
         generationRole: pack.generationRole ?? null,
         generationWeight: pack.generationWeight ?? 1,
         cost: pack.cost ?? 0,
+        buildingRole: pack.buildingRole ?? null,
         housingCapacity: pack.housingCapacity ?? 0,
+        employmentCapacity: pack.employmentCapacity ?? 0,
+        shoppingCapacity: pack.shoppingCapacity ?? 0,
+        recreationCapacity: pack.recreationCapacity ?? 0,
+        serviceCapacity: pack.serviceCapacity ?? 0,
         trafficForwardAxis: pack.trafficForwardAxis ?? 'z',
         personForwardAxis: pack.personForwardAxis ?? 'z',
         personGender: pack.personGender ?? 'neutral',
         animations: gltf.animations,
       };
     });
+  }
+
+  setTownLifeState(state) {
+    this.pedestrians.setTownLifeState(state);
   }
 
   renderAssetButtons() {
@@ -221,7 +230,7 @@ export class PlacementController {
         button.dataset.assetId = asset.id;
         button.innerHTML = `
           ${thumbnail ? `<span class="asset-preview"><img src="${thumbnail}" alt="" draggable="false" /></span>` : `<span class="asset-thumb asset-thumb--${asset.kind}"></span>`}
-          <span class="asset-copy"><span>${asset.name}</span><span class="asset-price"></span></span>
+          <span class="asset-copy"><span>${asset.name}</span>${asset.buildingRole ? `<span class="asset-role asset-role--${asset.buildingRole}">${prettifyName(asset.buildingRole)}</span>` : ''}<span class="asset-price"></span></span>
         `;
         button.addEventListener('click', () => this.chooseAsset(asset.id));
         grid.append(button);
@@ -927,6 +936,8 @@ export class PlacementController {
       this.elements.residentMood.textContent = person.identity.moodMeter;
     }
 
+    this.updateResidentRoutineReadout(person);
+
     this.updateResidentWantedReadout(person);
     this.elements.modeLabel.textContent = `Following ${person.identity.name}.`;
   }
@@ -1109,7 +1120,12 @@ export class PlacementController {
   }
 
   updateSelectedResident() {
-    if (!this.selectedResident || this.pedestrians.hasPerson(this.selectedResident)) {
+    if (!this.selectedResident) {
+      return;
+    }
+
+    if (this.pedestrians.hasPerson(this.selectedResident)) {
+      this.updateResidentRoutineReadout(this.selectedResident);
       return;
     }
 
@@ -1189,6 +1205,22 @@ export class PlacementController {
     disposeObject3D(incident.group);
     delete building.userData.fireIncident;
     this.fireIncidents = this.fireIncidents.filter((item) => item !== incident);
+  }
+
+  updateResidentRoutineReadout(person = this.selectedResident) {
+    if (!person) return;
+
+    if (this.elements.residentHome) {
+      this.elements.residentHome.textContent = person.assignment?.home?.name ?? 'Unassigned';
+    }
+
+    if (this.elements.residentDestination) {
+      this.elements.residentDestination.textContent = person.routine?.destination?.name ?? 'None available';
+    }
+
+    if (this.elements.residentRoutine) {
+      this.elements.residentRoutine.textContent = person.routine?.label ?? 'Wandering';
+    }
   }
 
   createFireAlertButton(incident) {

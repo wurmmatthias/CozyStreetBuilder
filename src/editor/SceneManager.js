@@ -279,6 +279,7 @@ export class SceneManager {
     const period = isNight ? 'Moonrise' : daylight < 0.72 ? 'Golden Hour' : 'Sunlit';
 
     return {
+      fictionalMinutes: this.fictionalMinutes,
       clockLabel: `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`,
       daylight,
       nightFactor,

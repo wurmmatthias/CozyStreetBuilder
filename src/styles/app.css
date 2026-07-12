@@ -1094,6 +1094,8 @@ dd {
     inset 0 1px 0 rgb(255 255 255 / 0.96);
   backdrop-filter: blur(16px);
   transition: transform 160ms ease, box-shadow 160ms ease;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
 }
 
 .economy-hud::before {
@@ -1117,6 +1119,55 @@ dd {
 .economy-topline {
   justify-content: space-between;
   gap: 18px;
+}
+
+.economy-collapse {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  color: #725744;
+  background: linear-gradient(180deg, #fff8d9, #ffd99a);
+  border: 2px solid #d7a86e;
+  border-bottom-width: 4px;
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 3px 0 rgb(164 112 75 / 0.12);
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.economy-collapse:hover {
+  background: linear-gradient(180deg, #fffdf0, #ffe89f);
+  transform: translateY(-1px);
+}
+
+.economy-collapse:active {
+  border-bottom-width: 2px;
+  transform: translateY(1px);
+}
+
+.economy-hud.is-minimized {
+  width: min(310px, calc(100vw - 24px));
+  max-height: none;
+  padding: 11px 12px;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.economy-hud.is-minimized > :not(.economy-topline) {
+  display: none;
+}
+
+.economy-hud.is-minimized .economy-topline {
+  gap: 12px;
+}
+
+.economy-hud.is-minimized #economy-balance {
+  font-size: 1.22rem;
+}
+
+.economy-hud.is-minimized .tax-income {
+  margin-left: auto;
 }
 
 .economy-topline > div:first-child,
@@ -1231,6 +1282,104 @@ dd {
   line-height: 1.3;
 }
 
+.town-needs,
+.town-goal {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  background: rgb(246 242 255 / 0.82);
+  border: 2px solid #d8c9ee;
+  border-radius: 8px;
+}
+
+.needs-heading,
+.town-goal label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6d6081;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.needs-heading small {
+  color: #9183a5;
+  font-size: 0.61rem;
+}
+
+.need-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  color: #736682;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.need-track {
+  grid-column: 1 / -1;
+  height: 7px;
+  overflow: hidden;
+  background: #e5ddef;
+  border-radius: 999px;
+}
+
+.need-track i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #b49be0, #72cfa5);
+  border-radius: inherit;
+  transition: width 260ms ease;
+}
+
+.town-goal {
+  background: rgb(255 249 222 / 0.85);
+  border-color: #e6cf83;
+}
+
+.town-goal label {
+  justify-content: flex-start;
+  color: #8b713b;
+}
+
+.town-goal > strong {
+  color: #685637;
+  font-size: 0.72rem;
+}
+
+.goal-track {
+  height: 8px;
+  overflow: hidden;
+  background: #eadfb9;
+  border-radius: 999px;
+}
+
+.goal-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #e5b74e, #72cfa5);
+  transition: width 260ms ease;
+}
+
+.town-goal p {
+  color: #8a7a59;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.town-goal.is-disabled > :not(label) {
+  opacity: 0.45;
+}
+
+.town-goal.is-complete {
+  background: rgb(228 250 235 / 0.9);
+  border-color: #83c99c;
+}
+
 .happiness-heading {
   justify-content: space-between;
   font-size: 0.78rem;
@@ -1326,7 +1475,8 @@ dd {
 
 .builder-shell[data-play-mode='normal'] .resident-window,
 .builder-shell[data-play-mode='normal'] .fire-window {
-  bottom: 310px;
+  right: 365px;
+  bottom: 18px;
 }
 
 @keyframes economy-alert {
@@ -1613,6 +1763,24 @@ h3 {
   gap: 4px;
   min-width: 0;
 }
+
+.asset-role {
+  width: fit-content;
+  padding: 2px 5px;
+  color: #756781;
+  font-size: 0.56rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #eee6f5;
+  border-radius: 999px;
+}
+
+.asset-role--residential { color: #47755a; background: #def2e5; }
+.asset-role--commercial { color: #79622e; background: #fff0b9; }
+.asset-role--workplace { color: #53647e; background: #dde8f5; }
+.asset-role--leisure { color: #87577c; background: #f4dff0; }
+.asset-role--service { color: #98594d; background: #f8dfd8; }
 
 .asset-price {
   color: #4e9c71;

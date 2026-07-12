@@ -18,6 +18,8 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 360,
+    buildingRole: 'commercial',
+    shoppingCapacity: 28,
   },
   {
     id: 'small-building',
@@ -27,6 +29,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 240,
+    buildingRole: 'residential',
     housingCapacity: 8,
   },
   {
@@ -37,6 +40,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 320,
+    buildingRole: 'residential',
     housingCapacity: 12,
   },
   {
@@ -47,6 +51,7 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 620,
+    buildingRole: 'residential',
     housingCapacity: 24,
   },
   {
@@ -57,7 +62,9 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 460,
-    housingCapacity: 16,
+    buildingRole: 'service',
+    employmentCapacity: 14,
+    serviceCapacity: 24,
   },
   {
     id: 'big-building',
@@ -67,7 +74,8 @@ export const assetPacks = [
     scale: 0.8,
     rotationStep: 90,
     cost: 760,
-    housingCapacity: 32,
+    buildingRole: 'workplace',
+    employmentCapacity: 32,
     generationRole: 'midrise',
     generationWeight: 1.15,
   },
@@ -79,7 +87,9 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 680,
-    housingCapacity: 20,
+    buildingRole: 'leisure',
+    employmentCapacity: 6,
+    recreationCapacity: 32,
   },
   {
     id: 'pizza-corner',
@@ -89,6 +99,9 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 420,
+    buildingRole: 'leisure',
+    employmentCapacity: 8,
+    recreationCapacity: 24,
   },
   {
     id: 'skyscraper',
@@ -98,7 +111,8 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 1200,
-    housingCapacity: 60,
+    buildingRole: 'workplace',
+    employmentCapacity: 60,
   },
   {
     id: 'skyscraper-2',
@@ -108,7 +122,9 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 1400,
-    housingCapacity: 72,
+    buildingRole: 'commercial',
+    employmentCapacity: 24,
+    shoppingCapacity: 72,
   },
   {
     id: 'skyscraper-3',
@@ -118,7 +134,9 @@ export const assetPacks = [
     scale: 1,
     rotationStep: 90,
     cost: 1600,
-    housingCapacity: 84,
+    buildingRole: 'service',
+    employmentCapacity: 42,
+    serviceCapacity: 84,
   },
   {
     id: 'tree',

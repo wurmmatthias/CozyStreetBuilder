@@ -341,6 +341,9 @@ app.innerHTML = `
               <span>Next taxes</span>
               <strong id="tax-income">+$0</strong>
             </div>
+            <button class="economy-collapse" id="economy-collapse" type="button" aria-label="Minimize town information" aria-expanded="true" title="Minimize town information">
+              <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+            </button>
           </div>
           <label class="tax-control" for="tax-rate">
             <span>Tax rate</span>
@@ -356,6 +359,21 @@ app.innerHTML = `
               <span id="population-fill"></span>
             </div>
             <p id="population-note">Build housing to welcome your first residents.</p>
+          </div>
+          <div class="town-needs" aria-label="Resident needs">
+            <div class="needs-heading">
+              <span><i class="fa-solid fa-heart" aria-hidden="true"></i> Town needs</span>
+              <small id="routine-readout">Morning commute</small>
+            </div>
+            <div class="need-row" data-need="employment"><span>Employment</span><strong id="employment-need">0%</strong><span class="need-track"><i id="employment-need-fill"></i></span></div>
+            <div class="need-row" data-need="shopping"><span>Shopping</span><strong id="shopping-need">0%</strong><span class="need-track"><i id="shopping-need-fill"></i></span></div>
+            <div class="need-row" data-need="recreation"><span>Recreation</span><strong id="recreation-need">0%</strong><span class="need-track"><i id="recreation-need-fill"></i></span></div>
+          </div>
+          <div class="town-goal" id="town-goal">
+            <label><input id="goal-enabled" type="checkbox" checked /> <span>Optional goal</span></label>
+            <strong>Reach 50 residents with 75% happiness</strong>
+            <div class="goal-track"><span id="goal-fill"></span></div>
+            <p id="goal-status">0 / 50 residents · 54 / 75 happiness</p>
           </div>
           <div class="happiness-block">
             <div class="happiness-heading">
@@ -397,6 +415,18 @@ app.innerHTML = `
               <div>
                 <dt>Mood</dt>
                 <dd id="resident-mood" class="resident-mood">-</dd>
+              </div>
+              <div>
+                <dt>Home</dt>
+                <dd id="resident-home">-</dd>
+              </div>
+              <div>
+                <dt>Destination</dt>
+                <dd id="resident-destination">-</dd>
+              </div>
+              <div>
+                <dt>Routine</dt>
+                <dd id="resident-routine">-</dd>
               </div>
               <div id="resident-wanted-status-row" hidden>
                 <dt>Status</dt>
@@ -513,6 +543,9 @@ const controller = new PlacementController(scene, {
   residentOccupation: document.querySelector('#resident-occupation'),
   residentAge: document.querySelector('#resident-age'),
   residentMood: document.querySelector('#resident-mood'),
+  residentHome: document.querySelector('#resident-home'),
+  residentDestination: document.querySelector('#resident-destination'),
+  residentRoutine: document.querySelector('#resident-routine'),
   residentWantedStatusRow: document.querySelector('#resident-wanted-status-row'),
   residentWantedStatus: document.querySelector('#resident-wanted-status'),
   residentWantedReason: document.querySelector('#resident-wanted-reason'),
@@ -603,11 +636,22 @@ const taxHappinessScore = document.querySelector('#tax-happiness-score');
 const foliageHappinessScore = document.querySelector('#foliage-happiness-score');
 const roadHappinessScore = document.querySelector('#road-happiness-score');
 const economyHud = document.querySelector('#economy-hud');
+const economyCollapse = document.querySelector('#economy-collapse');
 const populationValue = document.querySelector('#population-value');
 const housingCapacityValue = document.querySelector('#housing-capacity-value');
 const populationFill = document.querySelector('#population-fill');
 const populationTrack = document.querySelector('.population-track');
 const populationNote = document.querySelector('#population-note');
+const routineReadout = document.querySelector('#routine-readout');
+const needElements = {
+  employment: { value: document.querySelector('#employment-need'), fill: document.querySelector('#employment-need-fill') },
+  shopping: { value: document.querySelector('#shopping-need'), fill: document.querySelector('#shopping-need-fill') },
+  recreation: { value: document.querySelector('#recreation-need'), fill: document.querySelector('#recreation-need-fill') },
+};
+const goalEnabledInput = document.querySelector('#goal-enabled');
+const townGoal = document.querySelector('#town-goal');
+const goalFill = document.querySelector('#goal-fill');
+const goalStatus = document.querySelector('#goal-status');
 const escapeOverlay = document.querySelector('#escape-overlay');
 const escapeToggle = document.querySelector('#escape-toggle');
 const escapeSummary = document.querySelector('#escape-summary');
@@ -627,6 +671,21 @@ let happiness = 54;
 let population = 0;
 let fullHousingCycles = 0;
 let taxTimer = null;
+let goalEnabled = true;
+let goalCompleted = false;
+let currentFictionalMinutes = 8 * 60;
+let economyHudMinimized = false;
+
+function setEconomyHudMinimized(minimized) {
+  economyHudMinimized = Boolean(minimized);
+  economyHud.classList.toggle('is-minimized', economyHudMinimized);
+  economyCollapse.setAttribute('aria-expanded', String(!economyHudMinimized));
+  economyCollapse.setAttribute('aria-label', economyHudMinimized ? 'Expand town information' : 'Minimize town information');
+  economyCollapse.title = economyHudMinimized ? 'Expand town information' : 'Minimize town information';
+  economyCollapse.querySelector('i').className = economyHudMinimized
+    ? 'fa-solid fa-chevron-up'
+    : 'fa-solid fa-chevron-down';
+}
 
 function getAssetCost(asset) {
   return asset?.kind === 'building' ? Math.max(0, Number(asset.cost) || 0) : 0;
@@ -641,10 +700,32 @@ function getTownCounts() {
 }
 
 function getHousingCapacity() {
-  const assetsById = new Map(controller.assets.map((asset) => [asset.id, asset]));
   return controller.placed.reduce((capacity, object) => (
-    capacity + (Number(assetsById.get(object.userData.assetId)?.housingCapacity) || 0)
+    capacity + (object.userData.buildingRole === 'residential' ? Number(object.userData.housingCapacity) || 0 : 0)
   ), 0);
+}
+
+function getTownNeeds() {
+  const capacity = controller.placed.reduce((totals, object) => {
+    totals.employment += Number(object.userData.employmentCapacity) || 0;
+    totals.shopping += Number(object.userData.shoppingCapacity) || 0;
+    totals.recreation += Number(object.userData.recreationCapacity) || 0;
+    return totals;
+  }, { employment: 0, shopping: 0, recreation: 0 });
+  const demand = Math.max(1, population);
+  return Object.fromEntries(Object.entries(capacity).map(([need, value]) => [need, {
+    capacity: value,
+    demand: population,
+    score: population === 0 ? (value > 0 ? 100 : 0) : clamp((value / demand) * 100, 0, 100),
+  }]));
+}
+
+function getRoutineName(minutes = currentFictionalMinutes) {
+  const hour = (((minutes % 1440) + 1440) % 1440) / 60;
+  if (hour >= 6 && hour < 10) return 'Morning commute';
+  if (hour >= 10 && hour < 16) return 'Workday';
+  if (hour >= 16 && hour < 21) return 'Evening errands';
+  return 'At home';
 }
 
 function getTaxIncome() {
@@ -689,7 +770,7 @@ function getHousingHappinessPenalty() {
   return Math.max(0, fullHousingCycles - graceCycles) * 4;
 }
 
-function getHappinessFactors(counts, rate) {
+function getHappinessFactors(counts, rate, needs) {
   const buildingCount = counts.building ?? 0;
   const foliageCount = counts.foliage ?? 0;
   const roadCount = counts.road ?? 0;
@@ -700,11 +781,39 @@ function getHappinessFactors(counts, rate) {
     taxes: clamp(100 - rate * 4, 20, 100),
     foliage: clamp(45 + (foliageCount / foliageTarget) * 55, 45, 100),
     roads: clamp(45 + (roadCount / roadTarget) * 55, 45, 100),
+    employment: needs.employment.score,
+    shopping: needs.shopping.score,
+    recreation: needs.recreation.score,
     foliageCount,
     foliageTarget,
     roadCount,
     roadTarget,
   };
+}
+
+function updateGoalProgress() {
+  goalEnabledInput.checked = goalEnabled;
+  townGoal.classList.toggle('is-disabled', !goalEnabled);
+  townGoal.classList.toggle('is-complete', goalCompleted);
+  const populationProgress = clamp(population / 50, 0, 1);
+  const happinessProgress = clamp(happiness / 75, 0, 1);
+  goalFill.style.width = `${Math.min(populationProgress, happinessProgress) * 100}%`;
+
+  if (!goalEnabled) {
+    goalStatus.textContent = 'Goal tracking paused.';
+    return;
+  }
+
+  if (!goalCompleted && population >= 50 && happiness >= 75) {
+    goalCompleted = true;
+    balance += 750;
+    controller.elements.modeLabel.textContent = 'Goal complete! Your town earned a $750 community grant.';
+  }
+
+  goalStatus.textContent = goalCompleted
+    ? 'Complete · $750 community grant awarded'
+    : `${population} / 50 residents · ${Math.round(happiness)} / 75 happiness`;
+  townGoal.classList.toggle('is-complete', goalCompleted);
 }
 
 function getAssetPriceLabel(asset) {
@@ -749,9 +858,15 @@ function updateEconomyHud() {
 
   const rate = Number(taxRate.value);
   const counts = getTownCounts();
-  const factors = getHappinessFactors(counts, rate);
+  const needs = getTownNeeds();
+  const factors = getHappinessFactors(counts, rate, needs);
   const housingPenalty = getHousingHappinessPenalty();
-  const baseHappiness = factors.taxes * 0.4 + factors.foliage * 0.3 + factors.roads * 0.3;
+  const baseHappiness = factors.taxes * 0.25
+    + factors.foliage * 0.15
+    + factors.roads * 0.15
+    + factors.employment * 0.18
+    + factors.shopping * 0.135
+    + factors.recreation * 0.135;
   happiness = clamp(baseHappiness - housingPenalty, 0, 100);
   const income = getTaxIncome();
   const housingCapacity = getHousingCapacity();
@@ -785,10 +900,22 @@ function updateEconomyHud() {
           ? 'Residents are leaving because happiness is too low.'
           : `${housingCapacity - population} homes available. Higher happiness attracts residents faster.`;
 
+  Object.entries(needs).forEach(([need, state]) => {
+    const elements = needElements[need];
+    const roundedScore = Math.round(state.score);
+    elements.value.textContent = `${roundedScore}%`;
+    elements.fill.style.width = `${roundedScore}%`;
+    elements.value.title = `${state.capacity} capacity for ${state.demand} residents`;
+  });
+  routineReadout.textContent = getRoutineName();
+
   const weakestFactor = [
     { score: factors.taxes, note: 'Lowering taxes would give residents more breathing room.' },
     { score: factors.foliage, note: `Add more plants around town (${factors.foliageCount}/${factors.foliageTarget} recommended).` },
     { score: factors.roads, note: `Expand the road network (${factors.roadCount}/${factors.roadTarget} recommended pieces).` },
+    { score: factors.employment, note: 'Add Workplace or Service buildings so residents can find jobs.' },
+    { score: factors.shopping, note: 'Add Commercial buildings so residents can shop locally.' },
+    { score: factors.recreation, note: 'Add Leisure buildings so residents can unwind after work.' },
   ].sort((a, b) => a.score - b.score)[0];
 
   happinessNote.textContent = housingPenalty > 0
@@ -797,6 +924,9 @@ function updateEconomyHud() {
       ? 'Residents love the balance of taxes, greenery, and infrastructure.'
       : weakestFactor.note;
   economyHud.dataset.mood = happiness >= 60 ? 'happy' : happiness >= 40 ? 'uneasy' : 'unhappy';
+  controller.setTownLifeState({ enabled: economyEnabled, population, clockMinutes: currentFictionalMinutes });
+  updateGoalProgress();
+  economyBalance.textContent = currency.format(balance);
   controller.refreshAssetButtons();
 }
 
@@ -825,6 +955,8 @@ function setEconomyEnabled(enabled, reset = true) {
     population = 0;
     fullHousingCycles = 0;
     taxRate.value = '8';
+    goalEnabled = true;
+    goalCompleted = false;
   }
 
   if (enabled) {
@@ -854,6 +986,8 @@ function createTownSave() {
         happiness,
         population,
         fullHousingCycles,
+        goalEnabled,
+        goalCompleted,
       },
       trafficDensity: Number(trafficDensity.value) / 100,
       environment: scene.getEnvironmentState(),
@@ -1009,6 +1143,8 @@ function applyTownSave(rawSave) {
     population = Math.max(0, Math.round(finiteNumber(town.economy?.population, 0)));
     fullHousingCycles = clamp(Math.round(finiteNumber(town.economy?.fullHousingCycles, 0)), 0, 12);
     taxRate.value = String(clamp(finiteNumber(town.economy?.taxRate, 8), 0, 20));
+    goalEnabled = town.economy?.goalEnabled !== false;
+    goalCompleted = town.economy?.goalCompleted === true;
   }
 
   scene.setEnvironmentState(town.environment);
@@ -1715,7 +1851,8 @@ function updateClockReadout() {
   );
 }
 
-scene.onDayNightChange(({ clockLabel, period, isNight, isPaused }) => {
+scene.onDayNightChange(({ fictionalMinutes, clockLabel, period, isNight, isPaused }) => {
+  currentFictionalMinutes = Number.isFinite(fictionalMinutes) ? fictionalMinutes : currentFictionalMinutes;
   currentClockState = { clockLabel, period, isPaused };
   fictionalClockTime.textContent = clockLabel;
   fictionalClockTime.setAttribute('datetime', clockLabel);
@@ -1725,6 +1862,8 @@ scene.onDayNightChange(({ clockLabel, period, isNight, isPaused }) => {
   pauseTimeIcon.className = isPaused ? 'fa-solid fa-play' : 'fa-solid fa-pause';
   pauseTimeLabel.textContent = isPaused ? 'Resume' : 'Pause';
   pauseTime.title = isPaused ? 'Resume time' : 'Pause time';
+  routineReadout.textContent = getRoutineName(currentFictionalMinutes);
+  controller.setTownLifeState({ enabled: economyEnabled, population, clockMinutes: currentFictionalMinutes });
   updateClockReadout();
 });
 
@@ -1813,6 +1952,11 @@ generateTrafficDensity.addEventListener('input', () => {
 });
 
 taxRate.addEventListener('input', updateEconomyHud);
+economyCollapse.addEventListener('click', () => setEconomyHudMinimized(!economyHudMinimized));
+goalEnabledInput.addEventListener('change', () => {
+  goalEnabled = goalEnabledInput.checked;
+  updateGoalProgress();
+});
 
 document.querySelector('#rotate-left').addEventListener('click', () => controller.rotateSelected(-1));
 document.querySelector('#rotate-right').addEventListener('click', () => controller.rotateSelected(1));

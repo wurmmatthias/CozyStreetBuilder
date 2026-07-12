@@ -1,4 +1,13 @@
 {
+  "0.4.0": {
+    "date": "2026-07-12",
+    "changes": [
+      "Added Residential, Commercial, Workplace, Leisure, and Service building roles.",
+      "Added resident homes, destinations, morning commutes, evening errands, and need-based happiness.",
+      "Added an optional 50-resident, 75%-happiness town goal with a community grant reward.",
+      "Made the town information panel minimizable to a compact funds and next-taxes view."
+    ]
+  },
   "0.3.1": {
     "date": "2026-07-12",
     "changes": [

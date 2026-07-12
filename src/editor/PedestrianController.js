@@ -123,6 +123,11 @@ export class PedestrianController {
     this.placed = [];
     this.nextPersonId = 1;
     this.interactionCheckElapsed = 0;
+    this.townLifeEnabled = false;
+    this.population = 0;
+    this.clockMinutes = 8 * 60;
+    this.routinePhase = 'morning';
+    this.buildingsByRole = new Map();
 
     this.update = this.update.bind(this);
     this.sceneManager.addUpdater(this.update);
@@ -136,6 +141,23 @@ export class PedestrianController {
   syncRoads(placed) {
     this.placed = placed;
     this.needsRoadSync = true;
+  }
+
+  setTownLifeState({ enabled, population, clockMinutes } = {}) {
+    this.townLifeEnabled = Boolean(enabled);
+    this.population = Math.max(0, Math.round(Number(population) || 0));
+
+    if (Number.isFinite(clockMinutes)) {
+      this.clockMinutes = clockMinutes;
+    }
+
+    const nextPhase = getRoutinePhase(this.clockMinutes);
+    if (nextPhase !== this.routinePhase) {
+      this.routinePhase = nextPhase;
+      this.people.forEach((person) => this.updateResidentRoutine(person));
+    }
+
+    this.trimPeopleToDensity();
   }
 
   setDensity(density) {
@@ -208,24 +230,95 @@ export class PedestrianController {
           connections: getRoadPieceConnections(object),
         });
       });
+
+    this.rebuildBuildingDirectory();
+    this.people.forEach((person) => {
+      person.assignment = this.createResidentAssignment(person.id);
+      this.updateResidentRoutine(person);
+    });
+  }
+
+  rebuildBuildingDirectory() {
+    this.buildingsByRole.clear();
+
+    this.placed
+      .filter((object) => object.userData.assetKind === 'building' && object.userData.buildingRole)
+      .forEach((object) => {
+        const accessCell = this.findNearestRoadCell(object.position);
+        if (!accessCell) return;
+        const role = object.userData.buildingRole;
+        const entry = { object, accessCell, name: object.userData.assetName, role };
+        const entries = this.buildingsByRole.get(role) ?? [];
+        entries.push(entry);
+        this.buildingsByRole.set(role, entries);
+      });
+  }
+
+  findNearestRoadCell(position) {
+    let nearest = null;
+    let nearestDistance = Infinity;
+    this.roadMap.forEach((road) => {
+      const distance = Math.abs(road.x * ROAD_CELL_SIZE - position.x) + Math.abs(road.z * ROAD_CELL_SIZE - position.z);
+      if (distance < nearestDistance) {
+        nearest = road;
+        nearestDistance = distance;
+      }
+    });
+    return nearestDistance <= ROAD_CELL_SIZE * 3.25 ? nearest : null;
+  }
+
+  createResidentAssignment(id) {
+    if (!this.townLifeEnabled) return null;
+    const pick = (roles, offset = 0) => {
+      const entries = roles.flatMap((role) => this.buildingsByRole.get(role) ?? []);
+      return entries.length ? entries[(id + offset) % entries.length] : null;
+    };
+    return {
+      home: pick(['residential']),
+      employment: pick(['workplace', 'service', 'commercial', 'leisure'], 1),
+      shopping: pick(['commercial'], 2),
+      recreation: pick(['leisure'], 3),
+    };
+  }
+
+  updateResidentRoutine(person) {
+    if (!person.assignment) return;
+    const need = this.routinePhase === 'morning' || this.routinePhase === 'day'
+      ? 'employment'
+      : this.routinePhase === 'evening'
+        ? (person.id % 2 === 0 ? 'shopping' : 'recreation')
+        : 'home';
+    const destination = person.assignment[need] ?? person.assignment.home;
+    person.routine = {
+      phase: this.routinePhase,
+      need,
+      destination,
+      label: getRoutineLabel(this.routinePhase, need, destination),
+    };
+    person.object.userData.residentRoutine = person.routine.label;
+    person.object.userData.residentHome = person.assignment.home?.name ?? 'No home assigned';
+    person.object.userData.residentDestination = destination?.name ?? 'No destination available';
   }
 
   spawnPerson() {
-    const spawnOptions = this.getSpawnOptions();
+    const asset = randomItem(this.personAssets);
+    const identity = createResidentIdentity(this.nextPersonId, asset.personGender);
+    const assignment = this.createResidentAssignment(this.nextPersonId);
+    const homeKey = assignment?.home ? cellKey(assignment.home.accessCell) : null;
+    const homeOptions = homeKey ? this.getSpawnOptions().filter((option) => cellKey(option.cell) === homeKey) : [];
+    const spawnOptions = homeOptions.length ? homeOptions : this.getSpawnOptions();
 
     if (spawnOptions.length === 0) {
       return false;
     }
 
     const spawn = randomItem(spawnOptions);
-    const asset = randomItem(this.personAssets);
     const object = makePlaceableClone(asset.source, asset);
     const nextCell = getNeighborCell(spawn.cell, spawn.direction);
     const from = sidewalkPoint(spawn.cell, spawn.direction, spawn.side);
     const to = sidewalkPoint(nextCell, spawn.direction, spawn.side);
     const progress = Math.random();
     const animator = createPersonAnimator(object, asset);
-    const identity = createResidentIdentity(this.nextPersonId, asset.personGender);
 
     object.userData.pedestrian = true;
     object.userData.pedestrianId = this.nextPersonId;
@@ -240,7 +333,7 @@ export class PedestrianController {
     object.rotation.y = getTravelRotation(from, to, asset);
     this.sceneManager.add(object);
 
-    this.people.push({
+    const person = {
       id: this.nextPersonId,
       object,
       asset,
@@ -257,7 +350,11 @@ export class PedestrianController {
       idleTime: 0,
       interaction: null,
       interactionCooldown: randomFloat(3, INTERACTION_COOLDOWN_MAX),
-    });
+      assignment,
+      routine: null,
+    };
+    this.people.push(person);
+    this.updateResidentRoutine(person);
     this.nextPersonId += 1;
 
     return true;
@@ -401,7 +498,7 @@ export class PedestrianController {
       remainingTravel -= segmentRemaining;
       person.cell = nextRoad;
 
-      const nextDirection = this.chooseNextDirection(nextRoad, person.direction);
+      const nextDirection = this.chooseNextDirection(nextRoad, person.direction, person);
 
       if (!nextDirection) {
         return false;
@@ -420,10 +517,18 @@ export class PedestrianController {
     return true;
   }
 
-  chooseNextDirection(road, currentDirection) {
+  chooseNextDirection(road, currentDirection, person) {
     const connections = this.getConnections(road);
     const forward = connections.includes(currentDirection) ? currentDirection : null;
     const choices = connections.filter((direction) => direction !== OPPOSITE[currentDirection]);
+    const target = person?.routine?.destination?.accessCell;
+
+    if (target && choices.length > 0) {
+      const ranked = [...choices].sort((first, second) => (
+        cellDistance(getNeighborCell(road, first), target) - cellDistance(getNeighborCell(road, second), target)
+      ));
+      if (Math.random() < 0.88) return ranked[0];
+    }
 
     if (forward && Math.random() < 0.64) {
       return forward;
@@ -487,8 +592,29 @@ export class PedestrianController {
     }
 
     const roadScaledCount = Math.round(this.roadMap.size * THREE.MathUtils.lerp(0.45, 1.15, this.density));
-    return THREE.MathUtils.clamp(roadScaledCount, MIN_PEDESTRIANS, MAX_PEDESTRIANS);
+    const ambientTarget = THREE.MathUtils.clamp(roadScaledCount, MIN_PEDESTRIANS, MAX_PEDESTRIANS);
+    return this.townLifeEnabled ? Math.min(ambientTarget, this.population) : ambientTarget;
   }
+}
+
+function getRoutinePhase(minutes) {
+  const hour = (((minutes % (24 * 60)) + (24 * 60)) % (24 * 60)) / 60;
+  if (hour >= 6 && hour < 10) return 'morning';
+  if (hour >= 10 && hour < 16) return 'day';
+  if (hour >= 16 && hour < 21) return 'evening';
+  return 'night';
+}
+
+function getRoutineLabel(phase, need, destination) {
+  if (!destination) return need === 'home' ? 'Looking for a home' : `Needs ${need}`;
+  if (phase === 'morning') return `Morning commute to ${destination.name}`;
+  if (phase === 'evening') return `${need === 'shopping' ? 'Evening shopping' : 'Evening recreation'} at ${destination.name}`;
+  if (phase === 'night') return `Heading home to ${destination.name}`;
+  return `At work near ${destination.name}`;
+}
+
+function cellDistance(first, second) {
+  return Math.abs(first.x - second.x) + Math.abs(first.z - second.z);
 }
 
 function createPersonAnimator(object, asset) {
